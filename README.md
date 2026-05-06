@@ -1,8 +1,10 @@
 # ST Cloud Manager
 
-SillyTavern 自动开实例管理器。
+SillyTavern 自动开实例管理器。激活 Key → 创建酒馆容器 → 独立域名 → API 下发 → 返回账号密码。
 
-激活 Key → 自动创建酒馆容器 → 独立域名 → API 自动下发 → 返回账号密码。一个用户一个独立容器，数据完全隔离。
+```bash
+curl -fsSL https://raw.githubusercontent.com/mekos2772/st-cloud-manager/master/scripts/install.sh | bash
+```
 
 ## 架构
 
@@ -240,14 +242,6 @@ st-cloud-manager/
 ├── archive/                     # 删除归档
 └── backups/                     # 备份文件
 ```
-
-## 一键安装（Linux）
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mekos2772/st-cloud-manager/master/scripts/install.sh | bash
-```
-
-安装脚本交互式引导：环境检测 → 本地/生产模式 → API 配置 → 数据库 → 启动服务 → 健康检查。
 
 ### 守护进程（systemd）
 
