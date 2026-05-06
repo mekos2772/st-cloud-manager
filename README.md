@@ -244,7 +244,7 @@ st-cloud-manager/
 ## 一键安装（Linux）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mekos2772/st-cloud-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mekos2772/st-cloud-manager/master/scripts/install.sh | bash
 ```
 
 安装脚本交互式引导：环境检测 → 本地/生产模式 → API 配置 → 数据库 → 启动服务 → 健康检查。
