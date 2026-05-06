@@ -1,0 +1,38 @@
+version: "3.9"
+
+# ============================================================
+# ST Cloud Manager - Production HTTPS override
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  traefik:
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=${ST_DOCKER_NETWORK:-st_proxy}"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik-data/letsencrypt:/letsencrypt"
+
+  manager:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.st-manager.rule=Host(`${ST_MANAGER_DOMAIN:-manager.st.example.com}`)"
+      - "traefik.http.routers.st-manager.entrypoints=${ST_TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.st-manager.tls=true"
+      - "traefik.http.routers.st-manager.tls.certresolver=${ST_TRAEFIK_CERT_RESOLVER:-le}"
+      - "traefik.http.services.st-manager.loadbalancer.server.port=8000"

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ST Cloud · 激活</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #08080c;
+    --surface: rgba(18,18,28,0.72);
+    --border: rgba(255,255,255,0.06);
+    --text: #e4e4ec;
+    --text-dim: #84849a;
+    --accent: #5e6ad2;
+    --accent-glow: rgba(94,106,210,0.25);
+    --green: #34d399;
+    --red: #f87171;
+    --radius: 16px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-font-smoothing: antialiased;
+  }
+  .glow {
+    position: fixed; border-radius: 50%; filter: blur(120px); opacity: 0.08; pointer-events: none; z-index: 0;
+  }
+  .glow-1 { width: 500px; height: 500px; background: #5e6ad2; top: -200px; left: -150px; }
+  .glow-2 { width: 400px; height: 400px; background: #a78bfa; bottom: -150px; right: -100px; }
+
+  .card {
+    position: relative; z-index: 1;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 44px; width: 100%; max-width: 460px;
+    backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+    animation: fadeInUp 0.65s var(--ease) both;
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; color: #fff; }
+  h1 span { background: linear-gradient(135deg, #5e6ad2, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { color: var(--text-dim); margin-bottom: 32px; font-size: 14px; line-height: 1.6; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  input {
+    width: 100%; padding: 13px 16px; background: rgba(12,12,20,0.8); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; color: #fff; font-size: 16px; font-family: 'SF Mono', 'Fira Code', monospace;
+    outline: none; transition: all 0.25s var(--ease); margin-bottom: 20px;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  button {
+    width: 100%; padding: 14px; border: none; border-radius: 100px;
+    background: #fff; color: #0a0a10; font-size: 16px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all 0.3s var(--ease);
+  }
+  button:hover { transform: scale(1.03); box-shadow: 0 8px 32px rgba(255,255,255,0.15); }
+  button:disabled { background: rgba(255,255,255,0.08); color: var(--text-dim); cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .error {
+    background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2);
+    border-radius: 10px; padding: 12px 16px; color: var(--red); font-size: 13px; margin-bottom: 18px; display: none;
+  }
+
+  .result { display: none; margin-top: 28px; padding-top: 28px; border-top: 1px solid var(--border); animation: fadeInUp 0.5s var(--ease) both; }
+  .result h3 { color: var(--green); font-size: 16px; margin-bottom: 16px; }
+  .row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; }
+  .row .l { color: var(--text-dim); }
+  .row .v { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .row a { color: var(--accent); text-decoration: none; }
+  .warn { color: #fbbf24; font-size: 12px; margin-top: 12px; line-height: 1.4; }
+
+  .steps { margin-top: 20px; display: none; }
+  .step { display: flex; align-items: center; padding: 5px 0; font-size: 12px; }
+  .step .dot { width: 16px; margin-right: 10px; text-align: center; font-size: 10px; }
+  .step.done { color: var(--text-dim); } .step.done .dot { color: var(--green); }
+  .step.active { color: #fff; } .step.active .dot { color: var(--accent); }
+  .step.pending { color: #444; } .step.pending .dot { color: #333; }
+  .step.fail { color: var(--red); } .step.fail .dot { color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="glow glow-1"></div>
+<div class="glow glow-2"></div>
+
+<div class="card">
+  <h1>激活 <span>ST</span> 酒馆</h1>
+  <p class="sub">输入激活 Key，自动创建独立 SillyTavern 实例并下发 API 配置。</p>
+
+  <div class="error" id="error"></div>
+  <label>激活 Key</label>
+  <input type="text" id="keyInput" placeholder="ST-XXXX-XXXX" autocomplete="off" autofocus>
+  <button id="btn" onclick="doActivate()">激 活</button>
+
+  <div class="steps" id="progress"><div id="stepList"></div></div>
+
+  <div class="result" id="result">
+    <h3 id="resTitle">实例创建成功</h3>
+    <div class="row"><span class="l">酒馆地址</span><span class="v"><a id="resUrl" href="#" target="_blank">—</a></span></div>
+    <div class="row"><span class="l">用户名</span><span class="v" id="resUser">—</span></div>
+    <div class="row"><span class="l">密码</span><span class="v" id="resPass">—</span></div>
+    <div class="row"><span class="l">到期时间</span><span class="v" id="resExp">—</span></div>
+    <div class="row"><span class="l">API 状态</span><span class="v" id="resApi">—</span></div>
+    <div class="row"><span class="l">流式状态</span><span class="v" id="resStream">—</span></div>
+    <p class="warn" id="resWarn"></p>
+  </div>
+</div>
+
+<script>
+const S = ['验证 Key','创建目录','渲染模板','创建容器','初始化酒馆','下发 API 配置','启动实例','检测访问','检测 API','检测流式','创建完成'];
+
+function renderSteps(cur,fail){
+  return S.map((s,i)=>{
+    let cls='pending',icon='\u25CB';
+    if(fail>=0 && i===fail) { cls='fail'; icon='\u2716'; }
+    else if(fail>=0 && i>fail) { cls='pending'; icon='\u25CB'; }
+    else if(i<=cur) { cls='done'; icon='\u2714'; }
+    if(i===cur && fail<0) { cls='active'; icon='\u25CF'; }
+    return `<div class="step ${cls}"><span class="dot">${icon}</span>${s}</div>`;
+  }).join('');
+}
+
+async function doActivate(){
+  const key=document.getElementById('keyInput').value.trim(); if(!key) return;
+  const btn=document.getElementById('btn'), errEl=document.getElementById('error'), res=document.getElementById('result'), prog=document.getElementById('progress');
+  btn.disabled=true; errEl.style.display='none'; res.style.display='none';
+  prog.style.display='block'; document.getElementById('stepList').innerHTML=renderSteps(0,-1);
+
+  try {
+    document.getElementById('stepList').innerHTML=renderSteps(1,-1); await sleep(200);
+    const resp=await fetch('/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
+    const data=await resp.json();
+
+    if(!resp.ok){ document.getElementById('stepList').innerHTML=renderSteps(1,1); errEl.textContent=data.detail||'激活失败'; errEl.style.display='block'; return; }
+
+    const done=data.steps||[];
+    let si=2;
+    const map=[['copy template',2],['render config',3],['docker create',4],['wait init',5],['apply api config',6],['docker restart',7],['wait ready',8],['api test',9],['stream test',10]];
+    for(const [k,i] of map){ if(done.some(s=>s.includes(k.split(' ')[0]))) si=i; document.getElementById('stepList').innerHTML=renderSteps(si,-1); await sleep(200); }
+    document.getElementById('stepList').innerHTML=renderSteps(10,-1);
+
+    document.getElementById('resUrl').href=data.url; document.getElementById('resUrl').textContent=data.url;
+    document.getElementById('resUser').textContent=data.username; document.getElementById('resPass').textContent=data.password;
+    document.getElementById('resExp').textContent=data.expires_at||'—';
+    document.getElementById('resApi').textContent=data.api_status||'未检测';
+    document.getElementById('resStream').textContent=data.stream_status||'未检测';
+    if(data.warning) document.getElementById('resWarn').textContent=data.warning;
+    if(!data.ready){ document.getElementById('resTitle').textContent='实例创建中'; document.getElementById('resWarn').textContent='实例已创建但尚未完全就绪，请稍后刷新。'; }
+    res.style.display='block'; prog.style.display='none';
+  } catch(e){
+    document.getElementById('stepList').innerHTML=renderSteps(0,1); errEl.textContent='创建失败: '+e.message; errEl.style.display='block';
+  } finally { btn.disabled=false; }
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+document.getElementById('keyInput').addEventListener('keydown',function(e){ if(e.key==='Enter') doActivate(); });
+</script>
+</body>
+</html>

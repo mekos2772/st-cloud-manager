@@ -1,0 +1,27 @@
+# LiteLLM Proxy configuration
+# See: https://docs.litellm.ai/docs/proxy/configs
+
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}
+  database_url: ${LITELLM_DATABASE_URL:-postgresql://}
+
+model_list:
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: openai/deepseek-chat
+      api_base: https://api.deepseek.com/v1
+      api_key: ${DEEPSEEK_API_KEY}
+      rpm: 60
+      tpm: 200000
+
+litellm_settings:
+  num_retries: 3
+  request_timeout: 120
+  drop_params: true
+  set_verbose: false
+
+router_settings:
+  routing_strategy: "usage-based"
+  allowed_fails: 3
+  num_retries: 3
+  cooldown_time: 30

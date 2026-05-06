@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY manager/ /app/manager/
+COPY scripts/ /app/scripts/
+COPY templates/ /app/templates/
+COPY static/ /app/static/
+
+ENV ST_USERS_DIR=/app/users
+ENV ST_ARCHIVE_DIR=/app/archive
+ENV ST_TEMPLATES_DIR=/app/templates
+ENV ST_DB_PATH=/app/data.db
+
+RUN pip install --no-cache-dir -r manager/requirements.txt
+
+EXPOSE 8000
+
+CMD ["uvicorn", "manager.app:app", "--host", "0.0.0.0", "--port", "8000"]

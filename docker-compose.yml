@@ -1,0 +1,60 @@
+version: "3.9"
+
+# ============================================================
+# ST Cloud Manager - Local / HTTP-only mode
+#
+# For production with HTTPS, also use:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================================
+
+services:
+  # ---- Traefik Reverse Proxy (HTTP only) ----
+  traefik:
+    image: traefik:v3
+    container_name: st-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=${ST_DOCKER_NETWORK:-st_proxy}"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - st_proxy
+
+  # ---- Manager API + Frontend ----
+  manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.manager
+    container_name: st-manager
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ST_USERS_DIR=/app/users
+      - ST_ARCHIVE_DIR=/app/archive
+      - ST_TEMPLATES_DIR=/app/templates
+      - ST_DB_PATH=/app/data.db
+    volumes:
+      - "./data.db:/app/data.db"
+      - "./users:/app/users"
+      - "./archive:/app/archive"
+      - "./templates:/app/templates"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.st-manager.rule=Host(`${ST_MANAGER_DOMAIN:-manager.127-0-0-1.sslip.io}`)"
+      - "traefik.http.routers.st-manager.entrypoints=${ST_TRAEFIK_ENTRYPOINT:-web}"
+      - "traefik.http.services.st-manager.loadbalancer.server.port=8000"
+    networks:
+      - st_proxy
+
+networks:
+  st_proxy:
+    name: st_proxy
+    external: true

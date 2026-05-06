@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ST Cloud Manager v0.3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #08080c;
+    --surface: rgba(18,18,28,0.72);
+    --border: rgba(255,255,255,0.06);
+    --text: #e4e4ec;
+    --text-dim: #84849a;
+    --accent: #5e6ad2;
+    --accent-glow: rgba(94,106,210,0.25);
+    --green: #34d399;
+    --red: #f87171;
+    --orange: #fbbf24;
+    --radius: 14px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    background: rgba(8,8,12,0.72); border-bottom: 1px solid var(--border);
+  }
+  nav .inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 52px; }
+  nav h2 { font-size: 16px; color: #fff; font-weight: 700; }
+  nav h2 span { background: linear-gradient(135deg, #5e6ad2, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  nav .links { display: flex; gap: 24px; }
+  nav .links a {
+    color: var(--text-dim); text-decoration: none; font-size: 13px; font-weight: 500;
+    padding: 4px 0; border-bottom: 2px solid transparent; transition: all 0.25s var(--ease);
+  }
+  nav .links a:hover, nav .links a.active { color: #fff; border-bottom-color: var(--accent); }
+
+  .main { max-width: 1100px; margin: 0 auto; padding: 36px 24px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 24px; color: #fff; }
+  .section { display: none; }
+  .section.active { display: block; animation: fadeIn 0.4s var(--ease); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 22px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    transition: all 0.35s var(--ease); cursor: default;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 10px 32px rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.1); }
+  .card .num { font-size: 32px; font-weight: 700; }
+  .card .lbl { font-size: 11px; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+  .green { color: var(--green); } .red { color: var(--red); } .yellow { color: var(--orange); } .purple { color: var(--accent); }
+
+  /* Table */
+  .tbl-wrap {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 12px 16px; font-size: 10px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+  td { padding: 11px 16px; border-bottom: 1px solid rgba(255,255,255,0.03); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.015); }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+  .badge-running { background: rgba(52,211,153,0.12); color: var(--green); }
+  .badge-stopped { background: rgba(251,191,36,0.12); color: var(--orange); }
+  .badge-expired { background: rgba(248,113,113,0.12); color: var(--red); }
+  .badge-deleted { background: rgba(132,132,154,0.1); color: var(--text-dim); }
+  .badge-ok { background: rgba(52,211,153,0.12); color: var(--green); }
+  .badge-failed { background: rgba(248,113,113,0.12); color: var(--red); }
+  .badge-un { background: rgba(132,132,154,0.08); color: var(--text-dim); }
+
+  button {
+    padding: 7px 16px; border: 1px solid rgba(255,255,255,0.08); border-radius: 100px;
+    background: rgba(255,255,255,0.04); color: var(--text); cursor: pointer;
+    font-size: 12px; font-family: inherit; font-weight: 500;
+    transition: all 0.28s var(--ease); margin: 1px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  button:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); transform: scale(1.03); }
+  button.primary { background: #fff; color: #0a0a10; border-color: #fff; font-weight: 600; }
+  button.primary:hover { box-shadow: 0 6px 24px rgba(255,255,255,0.15); }
+  button.danger { color: var(--red); border-color: rgba(248,113,113,0.2); }
+  button.danger:hover { background: rgba(248,113,113,0.1); }
+
+  input, select, textarea {
+    padding: 10px 14px; background: rgba(12,12,20,0.8); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; color: #fff; font-size: 13px; font-family: inherit; outline: none;
+    transition: border-color 0.25s var(--ease); width: 100%; margin-bottom: 12px;
+  }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; font-weight: 500; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 18px; align-items: center; flex-wrap: wrap; }
+  .toolbar select { width: auto; margin-bottom: 0; }
+
+  .toast { position: fixed; bottom: 28px; right: 28px; padding: 12px 22px; border-radius: 100px; font-size: 13px; font-weight: 500; z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .toast.show { opacity: 1; }
+  .toast-ok { background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.2); color: var(--green); }
+  .toast-err { background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.2); color: var(--red); }
+
+  pre { background: rgba(12,12,20,0.8); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 16px; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 360px; overflow-y: auto; color: var(--text-dim); line-height: 1.5; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .actions { display: flex; gap: 3px; flex-wrap: wrap; }
+
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.65); z-index: 100; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+  .modal {
+    background: #14141e; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: fadeIn 0.3s var(--ease);
+  }
+  .modal h3 { margin-bottom: 18px; color: #fff; font-size: 17px; }
+  .modal .btn-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* single column form */
+  .form-col { max-width: 520px; }
+  .form-col .field { margin-bottom: 4px; }
+
+  @media (max-width: 768px) {
+    nav .links { display: none; }
+    .main { padding: 20px 16px; }
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .tbl-wrap { overflow-x: auto; }
+    table { min-width: 700px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <h2>ST Cloud<span>.</span></h2>
+    <div class="links">
+      <a href="#" class="active" data-sec="dashboard">总览</a>
+      <a href="#" data-sec="instances">实例管理</a>
+      <a href="#" data-sec="keys">Key 管理</a>
+      <a href="#" data-sec="apiconfig">API 配置</a>
+      <a href="#" data-sec="cloudflare">Cloudflare</a>
+      <a href="#" data-sec="security">安全</a>
+      <a href="#" data-sec="diagnose">诊断</a>
+      <a href="#" data-sec="backups">备份</a>
+    </div>
+  </div>
+</nav>
+
+<div class="main">
+
+<!-- 总览 -->
+<section id="s-dashboard" class="section active">
+  <h1>总览</h1>
+  <div class="cards" id="dashCards"></div>
+</section>
+
+<!-- 实例管理 -->
+<section id="s-instances" class="section">
+  <h1>实例管理</h1>
+  <div class="toolbar">
+    <select id="instFilter" onchange="loadInstances()">
+      <option value="">全部状态</option><option value="running">运行中</option><option value="stopped">已停止</option><option value="expired">已过期</option>
+    </select>
+    <button class="primary" onclick="loadInstances()">刷新</button>
+    <button onclick="applyApiAll()">批量下发 API</button>
+  </div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>ID</th><th>状态</th><th>就绪</th><th>Web</th><th>API</th><th>流式</th><th>到期</th><th>操作</th></tr></thead>
+    <tbody id="instTable"><tr><td colspan="8" style="color:var(--text-dim)">加载中...</td></tr></tbody></table>
+  </div>
+</section>
+
+<!-- Key 管理 -->
+<section id="s-keys" class="section">
+  <h1>激活 Key 管理</h1>
+  <div class="toolbar">
+    <button class="primary" onclick="openKeyModal()">生成新 Key</button>
+    <button onclick="loadKeys()">刷新</button>
+    <select id="keyFilter" onchange="loadKeys()" style="width:auto;margin-bottom:0">
+      <option value="">全部状态</option><option value="unused">未使用</option><option value="used">已使用</option><option value="disabled">已禁用</option>
+    </select>
+  </div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>Key</th><th>状态</th><th>套餐</th><th>天数</th><th>创建时间</th><th>使用时间</th><th>实例</th><th>操作</th></tr></thead>
+    <tbody id="keyTable"><tr><td colspan="8" style="color:var(--text-dim)">加载中...</td></tr></tbody></table>
+  </div>
+</section>
+
+<!-- API 配置 -->
+<section id="s-apiconfig" class="section">
+  <h1>API 配置中心</h1>
+  <div class="form-col">
+    <div class="field"><label>API 接口地址</label><input id="cfg_api_base_url" placeholder="http://api.lordfa.top"></div>
+    <div class="field"><label>默认模型</label><input id="cfg_api_model" placeholder="deepseek-v4-pro"></div>
+    <div class="field"><label>上游 API Key</label><input id="cfg_upstream_api_key" placeholder="留空不修改已有 Key"></div>
+    <div class="field"><label>流式传输</label><select id="cfg_streaming_enabled"><option value="true">开启</option><option value="false">关闭</option></select></div>
+    <div class="field"><label>Temperature</label><input id="cfg_default_temperature" placeholder="1.0"></div>
+    <div class="field"><label>Context Size</label><input id="cfg_default_context_size" placeholder="8192"></div>
+    <div class="field"><label>Max Tokens</label><input id="cfg_default_max_tokens" placeholder="4096"></div>
+    <div class="field"><label>API 模式</label><select id="cfg_api_mode"><option value="proxy">代理模式（Key 隐藏）</option><option value="direct">直连模式（仅本地测试）</option></select></div>
+    <div class="field"><label>LiteLLM</label><select id="cfg_enable_litellm"><option value="false">关闭</option><option value="true">开启</option></select></div>
+  </div>
+  <p style="color:var(--orange);font-size:12px;margin:8px 0 16px" id="directWarn" hidden>⚠ 直连模式不安全，真实 Key 将存储在实例中，仅适合本地测试。</p>
+  <div id="apiStatus" style="margin-bottom:14px;display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div id="apiStatusSpinner" style="width:16px;height:16px;border:2px solid rgba(255,255,255,0.1);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite"></div>
+      <span id="apiStatusText" style="font-size:13px;color:#fff">测试中...</span>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border-radius:4px;height:3px;overflow:hidden">
+      <div id="apiStatusBar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width 0.4s var(--ease)"></div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button class="primary" id="btnSaveApi" onclick="saveApiConfig()">保存配置</button>
+    <button id="btnTestConn" onclick="testApiConn()">测试连接</button>
+    <button id="btnTestStream" onclick="testApiStream()">测试流式</button>
+    <button onclick="applyApiAll()">批量下发到全部实例</button>
+  </div>
+</section>
+
+<!-- Cloudflare -->
+<section id="s-cloudflare" class="section">
+  <h1>域名管理</h1>
+  <div class="form-col">
+    <div class="field"><label>域名模式</label>
+      <select id="cfg_domain_mode" onchange="document.getElementById('cfSection').style.display=this.value==='cloudflare'?'block':'none'">
+        <option value="local">本地（127-0-0-1.sslip.io）</option>
+        <option value="cloudflare">Cloudflare DNS</option>
+      </select>
+    </div>
+  </div>
+  <div id="cfSection" style="display:none">
+  <div class="form-col">
+    <div class="field"><label>API Token</label><input id="cfg_cf_api_token" placeholder="只填 Token 本体，不要加 Bearer 前缀"></div>
+    <p style="color:var(--text-dim);font-size:11px;margin:-8px 0 8px">只填写 Token 本体（如 AbCdEf123...），系统自动加 Bearer。</p>
+    <div class="field"><label>Zone ID</label><input id="cfg_cf_zone_id"></div>
+    <div class="field"><label>Zone Name</label><input id="cfg_cf_zone_name"></div>
+    <div class="field"><label>Base Domain</label><input id="cfg_cf_base_domain" placeholder="st.example.com"></div>
+    <div class="field"><label>记录类型</label><select id="cfg_cf_record_type"><option value="CNAME">CNAME</option><option value="A">A</option></select></div>
+    <div class="field"><label>记录目标</label><input id="cfg_cf_record_target" placeholder="CNAME 目标或 IP 地址"></div>
+    <div class="field"><label>Proxy</label><select id="cfg_cf_proxied"><option value="false">关闭</option><option value="true">开启（Cloudflare CDN）</option></select></div>
+    <div class="field"><label>TTL</label><input id="cfg_cf_ttl" value="1"></div>
+    <div class="field"><label>同步删除</label><select id="cfg_cf_sync_delete"><option value="true">删除实例时同步删除 DNS</option><option value="false">保留 DNS 记录</option></select></div>
+  </div>
+  <div class="toolbar">
+    <button class="primary" onclick="saveCfConfig()">保存</button>
+    <button onclick="testCfToken()">验证 Token</button>
+    <button onclick="verifyCfZone()">验证 Zone</button>
+    <button onclick="listCfZones()">列出 Zone</button>
+    <button onclick="testCfRecord()">创建测试记录</button>
+  </div>
+  <div id="cfStatus" style="margin-top:12px;display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="width:16px;height:16px;border:2px solid rgba(255,255,255,0.1);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite"></div>
+      <span id="cfStatusText" style="font-size:13px;color:#fff">请求中...</span>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border-radius:4px;height:3px;overflow:hidden">
+      <div id="cfStatusBar" style="height:100%;background:var(--accent);border-radius:4px;width:20%;transition:width 0.5s var(--ease)"></div>
+    </div>
+  </div>
+  <pre id="cfOutput" style="margin-top:14px;display:none"></pre>
+  </div>
+</section>
+
+<!-- 安全 -->
+<section id="s-security" class="section">
+  <h1>Docker 防穿透检查</h1>
+  <div class="toolbar"><button class="primary" onclick="loadSecurity()">执行检查</button></div>
+  <div class="cards" id="secCards"></div>
+  <div class="tbl-wrap" id="secTable" style="display:none;margin-top:16px">
+    <table><thead><tr><th>容器</th><th>运行</th><th>风险等级</th><th>问题</th></tr></thead>
+    <tbody id="secBody"></tbody></table>
+  </div>
+</section>
+
+<!-- 诊断 -->
+<section id="s-diagnose" class="section">
+  <h1>诊断与日志</h1>
+  <div class="toolbar"><button class="primary" onclick="runHealth()">系统健康检查</button></div>
+  <div style="display:flex;gap:10px;margin-bottom:16px"><input id="diagId" placeholder="输入实例 ID" style="margin-bottom:0"><button class="primary" onclick="diagInstance()">查看详情</button><button onclick="viewLog()">查看日志</button></div>
+  <pre id="diagOut">点击上方按钮查看结果...</pre>
+</section>
+
+<!-- 备份 -->
+<section id="s-backups" class="section">
+  <h1>备份管理</h1>
+  <div class="toolbar"><button class="primary" onclick="createBackup()">一键备份</button><button onclick="loadBackups()">刷新</button></div>
+  <div class="tbl-wrap">
+    <table><thead><tr><th>文件名</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+    <tbody id="bkpTable"><tr><td colspan="4" style="color:var(--text-dim)">加载中...</td></tr></tbody></table>
+  </div>
+</section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Key 生成弹窗 -->
+<div class="modal-overlay" id="keyModal">
+  <div class="modal">
+    <h3>生成激活 Key</h3>
+    <div class="field"><label>数量</label><input id="keyCount" value="1" min="1" max="100"></div>
+    <div class="field"><label>有效天数</label><input id="keyDays" value="30" min="1"></div>
+    <div class="field"><label>套餐名</label><input id="keyPlan" value="default"></div>
+    <div id="genKeys" style="display:none;margin-top:12px"><pre id="genKeysText" style="color:var(--green)"></pre></div>
+    <div class="btn-row">
+      <button onclick="document.getElementById('keyModal').style.display='none'">取消</button>
+      <button class="primary" onclick="doGenKeys()">生成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const AK = localStorage.getItem('st_admin_key') || '';
+function H(){return{'Content-Type':'application/json','x-api-key':AK}}
+async function R(m,u,b){const r=await fetch(u,{method:m,headers:H(),body:b?JSON.stringify(b):undefined});if(r.status===403){const k=prompt('请输入管理后台 API Key:');if(k){localStorage.setItem('st_admin_key',k);location.reload()}throw new Error('需要 API Key 验证')}const d=await r.json();if(!r.ok)throw new Error(d.detail||'请求失败');return d}
+function T(msg,c){const e=document.getElementById('toast');e.textContent=msg;e.className='toast toast-'+c+' show';setTimeout(()=>e.className='toast',2400)}
+function B(v){const m={'running':'badge-running','stopped':'badge-stopped','expired':'badge-expired','deleted':'badge-deleted','ok':'badge-ok','ready':'badge-ok','failed':'badge-failed','timeout':'badge-failed','unchecked':'badge-un'};return `<span class="badge ${m[v]||'badge-un'}">${v}</span>`}
+
+// 导航
+document.querySelectorAll('nav .links a').forEach(a=>a.addEventListener('click',function(e){e.preventDefault();document.querySelectorAll('nav .links a').forEach(l=>l.classList.remove('active'));this.classList.add('active');const s=this.dataset.sec;document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));document.getElementById('s-'+s).classList.add('active');const fn={dashboard:loadDashboard,instances:loadInstances,keys:loadKeys,apiconfig:loadApiConfig,backups:loadBackups,security:loadSecurity,cloudflare:loadCfConfig}[s];if(fn)fn()}));
+
+async function loadDashboard(){try{const d=await R('GET','/api/admin/summary');document.getElementById('dashCards').innerHTML=`
+  <div class="card"><div class="num purple">${d.total_instances}</div><div class="lbl">实例总数</div></div>
+  <div class="card"><div class="num green">${d.running}</div><div class="lbl">运行中</div></div>
+  <div class="card"><div class="num yellow">${d.stopped}</div><div class="lbl">已停止</div></div>
+  <div class="card"><div class="num red">${d.expired}</div><div class="lbl">已过期</div></div>
+  <div class="card"><div class="num purple">${d.unused_keys}</div><div class="lbl">可用 Key</div></div>
+  <div class="card"><div class="num green">${d.today_created}</div><div class="lbl">今日创建</div></div>
+  <div class="card"><div class="num green">${d.api_ok}</div><div class="lbl">API 正常</div></div>
+  <div class="card"><div class="num green">${d.stream_ok}</div><div class="lbl">流式正常</div></div>
+`}catch(e){T(e.message,'err')}}
+
+async function loadInstances(){try{const s=document.getElementById('instFilter').value;const d=await R('GET','/api/admin/instances'+(s?'?status='+s:''));const arr=Array.isArray(d)?d:[];document.getElementById('instTable').innerHTML=arr.length?arr.map(i=>`<tr>
+  <td>${i.instance_id}</td><td>${B(i.status)}</td><td>${i.ready?'✔':'✘'}</td>
+  <td>${B(i.web_status||'unchecked')}</td><td>${B(i.api_status||'unchecked')}</td><td>${B(i.stream_status||'unchecked')}</td>
+  <td>${(i.expires_at||'').substr(0,10)}</td>
+  <td><div class="actions">
+    <button onclick="window.open('http://'+'${i.domain}')">打开</button>
+    <button onclick="navigator.clipboard.writeText('http://${i.domain}')">复制地址</button>
+    <button onclick="navigator.clipboard.writeText('${i.username} / ${i.password}')">复制账号</button>
+    ${i.status!=='running'?`<button onclick="doOp('start','${i.instance_id}')">启动</button>`:''}
+    ${i.status==='running'?`<button onclick="doOp('stop','${i.instance_id}')">停止</button>`:''}
+    <button onclick="doOp('restart','${i.instance_id}')">重启</button>
+    <button onclick="doRenew('${i.instance_id}')">续期</button>
+    <button onclick="doApplyApi('${i.instance_id}')">下发 API</button>
+    <button onclick="viewLog('${i.instance_id}')">日志</button>
+    <button onclick="viewInspect('${i.instance_id}')">诊断</button>
+    <button class="danger" onclick="doDelete('${i.instance_id}')">删除</button>
+  </div></td></tr>`).join(''):'<tr><td colspan="8" style="color:var(--text-dim)">暂无实例</td></tr>'}catch(e){T(e.message,'err')}}
+
+async function doOp(op,id){try{await R('POST','/api/admin/instances/'+id+'/'+op);T('操作成功','ok');loadInstances()}catch(e){T(e.message,'err')}}
+async function doRenew(id){const d=prompt('续期天数:','30');if(!d)return;try{await R('POST','/api/admin/instances/'+id+'/renew',{days:parseInt(d)});T('续期成功','ok');loadInstances()}catch(e){T(e.message,'err')}}
+async function doDelete(id){if(!confirm('确定删除实例 '+id+'？数据将被归档。'))return;try{await R('DELETE','/api/admin/instances/'+id);T('已删除','ok');loadInstances()}catch(e){T(e.message,'err')}}
+async function doApplyApi(id){try{const r=await R('POST','/api/admin/instances/'+id+'/apply-api-config');T(r.message||'下发完成','ok')}catch(e){T(e.message,'err')}}
+async function applyApiAll(){if(!confirm('确定批量下发 API 配置到全部实例？'))return;try{const r=await R('POST','/api/admin/instances/apply-api-config-all');T('完成: '+r.results.filter(x=>x.ok).length+'/'+r.total,'ok')}catch(e){T(e.message,'err')}}
+async function viewLog(id){const iid=id||document.getElementById('diagId').value.trim();if(!iid)return;try{const r=await R('GET','/api/admin/instances/'+iid+'/logs');document.getElementById('diagId').value=iid;document.getElementById('diagOut').textContent=r.logs||'(空)';switchTo('diagnose')}catch(e){T(e.message,'err')}}
+async function viewInspect(id){const iid=id||document.getElementById('diagId').value.trim();if(!iid)return;try{const r=await R('GET','/api/admin/instances/'+iid+'/inspect');document.getElementById('diagId').value=iid;document.getElementById('diagOut').textContent=JSON.stringify(r,null,2);switchTo('diagnose')}catch(e){T(e.message,'err')}}
+function switchTo(s){document.querySelectorAll('nav .links a').forEach(l=>l.classList.remove('active'));const a=document.querySelector('nav .links a[data-sec="'+s+'"]');if(a)a.classList.add('active');document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));document.getElementById('s-'+s).classList.add('active')}
+
+async function loadKeys(){try{const s=document.getElementById('keyFilter').value;const d=await R('GET','/api/admin/keys'+(s?'?status='+s:''));const arr=Array.isArray(d)?d:[];document.getElementById('keyTable').innerHTML=arr.map(k=>`<tr>
+  <td style="cursor:pointer" onclick="navigator.clipboard.writeText('${k.key}')" title="点击复制">${k.key}</td>
+  <td>${B(k.status==='unused'?'running':k.status==='used'?'stopped':'expired')} ${k.status}</td>
+  <td>${k.plan}</td><td>${k.days}</td><td>${(k.created_at||'').substr(0,10)}</td>
+  <td>${(k.used_at||'').substr(0,10)||'—'}</td><td>${k.instance_id||'—'}</td>
+  <td><button onclick="navigator.clipboard.writeText('${k.key}')">复制</button>
+  ${k.status==='unused'?`<button class="danger" onclick="disableKey('${k.key}')">禁用</button>`:''}
+  ${k.status==='disabled'?`<button onclick="enableKey('${k.key}')">启用</button>`:''}
+  ${k.status==='disabled'?`<button class="danger" onclick="delKey('${k.key}')">删除</button>`:''}</td>
+</tr>`).join('')}catch(e){T(e.message,'err')}}
+function openKeyModal(){document.getElementById('genKeys').style.display='none';document.getElementById('keyCount').value=1;document.getElementById('keyDays').value=30;document.getElementById('keyPlan').value='default';document.getElementById('keyModal').style.display='flex'}
+async function doGenKeys(){const c=parseInt(document.getElementById('keyCount').value)||1,d=parseInt(document.getElementById('keyDays').value)||30,p=document.getElementById('keyPlan').value||'default';try{const r=await R('POST','/api/admin/keys',{count:c,days:d,plan:p});document.getElementById('genKeysText').textContent=r.keys.join('\n');document.getElementById('genKeys').style.display='block';T('已生成 '+r.keys.length+' 个 Key','ok');loadKeys()}catch(e){T(e.message,'err')}}
+async function disableKey(key){try{await R('POST','/api/admin/keys/'+key+'/disable');T('已禁用','ok');loadKeys()}catch(e){T(e.message,'err')}}
+async function enableKey(key){try{await R('POST','/api/admin/keys/'+key+'/enable');T('已启用','ok');loadKeys()}catch(e){T(e.message,'err')}}
+async function delKey(key){if(!confirm('确定删除 '+key+'？此操作不可撤销。'))return;try{await R('DELETE','/api/admin/keys/'+key);T('已删除','ok');loadKeys()}catch(e){T(e.message,'err')}}
+
+async function loadApiConfig(){try{const d=await R('GET','/api/admin/settings/api');['api_base_url','api_model','upstream_api_key','streaming_enabled','default_temperature','default_context_size','default_max_tokens','api_mode','enable_litellm'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('directWarn').hidden=d.api_mode!=='direct'}catch(e){T(e.message,'err')}}
+async function saveApiConfig(){const d={};['api_base_url','api_model','upstream_api_key','streaming_enabled','default_temperature','default_context_size','default_max_tokens','api_mode','enable_litellm'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/settings/api',d);T('配置已保存','ok')}catch(e){T(e.message,'err')}}
+function showApiStatus(msg){const s=document.getElementById('apiStatus'),t=document.getElementById('apiStatusText'),b=document.getElementById('apiStatusBar');s.style.display='block';t.textContent=msg;b.style.width='30%'}
+function hideApiStatus(ok,msg){const t=document.getElementById('apiStatusText'),b=document.getElementById('apiStatusBar');b.style.width='100%';t.textContent=msg;t.style.color=ok?'var(--green)':'var(--red)';setTimeout(()=>{document.getElementById('apiStatus').style.display='none';t.style.color='#fff'},2000)}
+function disableBtns(v){['btnSaveApi','btnTestConn','btnTestStream'].forEach(id=>document.getElementById(id).disabled=v)}
+async function testApiConn(){showApiStatus('正在测试连接...');disableBtns(true);try{const r=await R('POST','/api/admin/settings/api/test');hideApiStatus(r.ok,'连接成功');T(r.ok?'连接成功':'失败: '+(r.error||''),r.ok?'ok':'err')}catch(e){hideApiStatus(false,e.message);T(e.message,'err')}finally{disableBtns(false)}}
+async function testApiStream(){showApiStatus('正在测试流式传输...');disableBtns(true);try{const r=await R('POST','/api/admin/settings/api/test-stream');hideApiStatus(r.ok,'流式测试成功');T(r.ok?'流式成功':'失败: '+(r.error||''),r.ok?'ok':'err')}catch(e){hideApiStatus(false,e.message);T(e.message,'err')}finally{disableBtns(false)}}
+
+async function runHealth(){let o='';for(const[n,ep] of [['Docker','docker'],['Traefik','traefik'],['Manager','manager']]){try{const r=await R('GET','/api/admin/health/'+ep);o+=n+': '+(r.ok?'\u2714 正常':'\u2718 '+(r.error||'异常'))+'\n'}catch(e){o+=n+': \u2718 '+e.message+'\n'}}
+try{const t=await R('GET','/api/admin/health/templates');o+='模板:\n';o+='  目录存在: '+(t.templates_exist?'\u2714':'✘')+'\n';o+='  config.yaml.tpl: '+(t.config_tpl_exists?'\u2714':'✘')+'\n';o+='  data/default-user: '+(t.data_default_user_exists?'\u2714':'✘')+'\n';o+='  PROXY_API_KEY 占位符: '+(t.has_proxy_key_placeholder?'\u2714':'✘')+'\n';o+='  API_MODEL 占位符: '+(t.has_api_model_placeholder?'\u2714':'✘')+'\n';o+='  API_BASE_URL 占位符: '+(t.has_api_base_url_placeholder?'\u2714':'✘')+'\n'}catch(e){o+='模板: ✘ '+e.message+'\n'}
+document.getElementById('diagOut').textContent=o}
+async function diagInstance(){const id=document.getElementById('diagId').value.trim();if(!id)return;try{const r=await R('GET','/api/admin/instances/'+id+'/inspect');document.getElementById('diagOut').textContent=JSON.stringify(r,null,2)}catch(e){T(e.message,'err')}}
+
+async function loadBackups(){try{const d=await R('GET','/api/admin/backup/list');document.getElementById('bkpTable').innerHTML=d.length?d.map(b=>`<tr><td>${b.name}</td><td>${(b.size/1024/1024).toFixed(1)} MB</td><td>${b.mtime||''}</td><td><button class="danger" onclick="delBkp('${b.name}')">删除</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--text-dim)">暂无备份</td></tr>'}catch(e){T(e.message,'err')}}
+async function createBackup(){try{const r=await R('POST','/api/admin/backup/create');T('备份完成: '+r.name,'ok');loadBackups()}catch(e){T(e.message,'err')}}
+async function delBkp(n){if(!confirm('删除备份 '+n+'？'))return;try{await R('DELETE','/api/admin/backup/'+n);T('已删除','ok');loadBackups()}catch(e){T(e.message,'err')}}
+
+// Cloudflare
+async function loadCfConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('cfSection').style.display=d.domain_mode==='cloudflare'?'block':'none'}catch(e){T(e.message,'err')}}
+async function saveCfConfig(){const d={};['domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
+function showCfLoad(msg){const s=document.getElementById('cfStatus'),t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');s.style.display='block';t.textContent=msg;b.style.width='20%'}
+function showCfDone(ok,msg){const t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');b.style.width='100%';t.textContent=msg;t.style.color=ok?'var(--green)':'var(--red)';setTimeout(()=>{document.getElementById('cfStatus').style.display='none';t.style.color='#fff'},2500)}
+
+async function testCfToken(){showCfLoad('正在验证 Cloudflare Token...');try{const r=await R('POST','/api/admin/cloudflare/test-token');showCfDone(r.ok, r.ok?'Token 验证成功':'验证失败');showCf(r)}catch(e){showCfDone(false,e.message)}}
+async function verifyCfZone(){showCfLoad('正在验证 Zone...');try{const r=await R('GET','/api/admin/cloudflare/verify-zone');showCfDone(r.ok, r.ok?'Zone 验证成功':'验证失败');showCf(r)}catch(e){showCfDone(false,e.message)}}
+async function listCfZones(){showCfLoad('正在获取 Zone 列表...');try{const r=await R('GET','/api/admin/cloudflare/zones');showCfDone(r.ok, r.ok?'获取成功':'获取失败');showCf(r)}catch(e){showCfDone(false,e.message)}}
+async function testCfRecord(){showCfLoad('正在创建测试记录...');try{const r=await R('POST','/api/admin/cloudflare/test-record',{name:'test-'+Date.now().toString(36)});showCfDone(r.ok, r.ok?'测试记录已创建':'创建失败');showCf(r)}catch(e){showCfDone(false,e.message)}}
+function showCf(r){document.getElementById('cfOutput').style.display='block';document.getElementById('cfOutput').textContent=JSON.stringify(r,null,2)}
+
+async function loadSecurity(){try{const d=await R('GET','/api/admin/security/docker');document.getElementById('secCards').innerHTML=`
+  <div class="card"><div class="num purple">${d.total_containers}</div><div class="lbl">检查容器</div></div>
+  <div class="card"><div class="num green">${d.safe_count}</div><div class="lbl">安全</div></div>
+  <div class="card"><div class="num red">${d.risk_count}</div><div class="lbl">风险</div></div>
+`;
+  if(d.containers.length){
+    document.getElementById('secTable').style.display='block';
+    document.getElementById('secBody').innerHTML=d.containers.map(c=>`<tr>
+      <td>${c.container_name}</td><td>${c.running?'\u2714':'\u2718'}</td>
+      <td><span class="badge ${c.risk_level==='safe'?'badge-ok':'badge-failed'}">${c.risk_level==='safe'?'安全':'高风险'}</span></td>
+      <td style="color:${c.risk_level==='safe'?'var(--green)':'var(--red)'}">${c.risks?c.risks.join('; '):(c.error||'无')}</td>
+    </tr>`).join('');
+  }
+  if(d.advice&&d.advice.length){T('风险建议: '+d.advice[0],'err')}
+}catch(e){T(e.message,'err')}}
+
+loadDashboard();
+</script>
+</body>
+</html>

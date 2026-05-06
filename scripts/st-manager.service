@@ -1,0 +1,18 @@
+[Unit]
+Description=ST Cloud Manager
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/st-cloud-manager
+ExecStart=/usr/bin/python3 -m uvicorn manager.app:app --host 0.0.0.0 --port 5000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/opt/st-cloud-manager/logs/manager.log
+StandardError=append:/opt/st-cloud-manager/logs/manager.log
+
+[Install]
+WantedBy=multi-user.target
