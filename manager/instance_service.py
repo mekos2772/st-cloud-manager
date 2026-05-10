@@ -357,6 +357,8 @@ def create_instance(activation_key: str) -> dict:
             result["warning"] = (result.get("warning", "") + " | " + cf_warning).strip(" |")
         return result
 
+    except ValueError:
+        raise
     except Exception as e:
         if instance_id:
             _rollback(instance_id, container or _container_name(instance_id))
@@ -522,6 +524,8 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
             "is_trial": True,
         }
 
+    except ValueError:
+        raise
     except Exception as e:
         if instance_id:
             _rollback(instance_id, container or _container_name(instance_id))
