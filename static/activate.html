@@ -190,30 +190,36 @@ async function initTrialMode(){
 
 async function doTrialCreate(){
   const btn=document.getElementById('trialBtn'), errEl=document.getElementById('error'), res=document.getElementById('result'), prog=document.getElementById('progress');
-  btn.disabled=true; errEl.style.display='none'; res.style.display='none';
-  prog.style.display='block'; document.getElementById('stepList').innerHTML=renderSteps(0,-1);
+  btn.disabled=true; btn.textContent='创建中...'; errEl.style.display='none'; res.style.display='none';
+  prog.style.display='block';
+
+  // Animated dots while waiting
+  const dots=['.','..','...','....'];
+  let di=0;
+  const anim=setInterval(()=>{
+    document.getElementById('stepList').innerHTML='<div style=\"text-align:center;padding:20px;color:#fff;font-size:14px\">正在创建实例，请稍候'+dots[di%4]+'</div>';
+    di++;
+  },400);
 
   try {
-    document.getElementById('stepList').innerHTML=renderSteps(1,-1); await sleep(300);
     const resp=await fetch('/api/trial/create',{method:'POST'});
+    clearInterval(anim);
     const data=await resp.json();
 
     if(!resp.ok){
-      // Check if queued
       if(data.queued){
         document.getElementById('queueInfo').style.display='block';
         document.getElementById('queueInfo').innerHTML='⏳ '+data.message+'<br><small>系统资源紧张，请耐心等待，队列会自动处理。</small>';
-        prog.style.display='none'; btn.disabled=false;
-        // Poll queue status
+        prog.style.display='none'; btn.disabled=false; btn.textContent='一 键 创 建';
         pollQueue();
         return;
       }
-      document.getElementById('stepList').innerHTML=renderSteps(0,1);
-      errEl.textContent=data.detail||'创建失败'; errEl.style.display='block'; btn.disabled=false; prog.style.display='none';
+      prog.style.display='none';
+      errEl.textContent=data.detail||'创建失败'; errEl.style.display='block'; btn.disabled=false; btn.textContent='一 键 创 建';
       return;
     }
 
-    document.getElementById('stepList').innerHTML=renderSteps(10,-1);
+    document.getElementById('stepList').innerHTML='<div style=\"text-align:center;padding:20px;color:#34d399;font-size:14px\">✔ 创建完成</div>';
 
     document.getElementById('resUrl').href=data.url; document.getElementById('resUrl').textContent=data.url;
     document.getElementById('resUser').textContent=data.username; document.getElementById('resPass').textContent=data.password;
@@ -223,12 +229,13 @@ async function doTrialCreate(){
     document.getElementById('resTitle').textContent='体验实例创建成功';
     document.getElementById('resWarn').textContent='体验实例超过10分钟无操作将自动释放。';
     res.style.display='block'; prog.style.display='none';
-    btn.disabled=false;
+    btn.disabled=false; btn.textContent='一 键 创 建';
     startActivityPing(data.instance_id);
   } catch(e){
-    document.getElementById('stepList').innerHTML=renderSteps(0,1);
+    clearInterval(anim);
+    prog.style.display='none';
     errEl.textContent='创建失败: '+e.message; errEl.style.display='block';
-    btn.disabled=false; prog.style.display='none';
+    btn.disabled=false; btn.textContent='一 键 创 建';
   }
 }
 
