@@ -28,6 +28,8 @@ _DEFAULTS = {
     "routing_mode": "subdomain",
     "base_domain": "",
     "path_prefix_length": "8",
+    # Runtime
+    "runtime_mode": "docker",
     # Trial mode
     "trial_enabled": "false",
     "trial_max_instances": "3",

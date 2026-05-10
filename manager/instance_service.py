@@ -18,18 +18,70 @@ from manager.config import (
     DEFAULT_PLAN, DEFAULT_DAYS,
     ROUTING_MODE, BASE_DOMAIN, PATH_PREFIX_LENGTH,
 )
-from manager.docker_service import (
-    create_container, stop_container, start_container, restart_container,
-    remove_container, health_check_container,
-)
 from manager.template_service import (
     copy_template, render_config, archive_instance,
 )
 from manager.key_service import validate_key, mark_key_used
 from manager.proxy_service import create_proxy_key, delete_proxy_key
-from manager.traefik_config_service import regenerate
 from manager.settings_service import get_all_settings
 from manager.cloudflare_service import is_cf_enabled, create_dns_record, delete_dns_record
+
+RUNTIME_MODE = ROUTING_MODE  # reused, but runtime is separate
+
+
+def _get_docker_svc():
+    import manager.docker_service as svc
+    return svc
+
+
+def _get_process_svc():
+    import manager.process_service as svc
+    return svc
+
+
+def _get_runtime_svc():
+    s = get_all_settings()
+    mode = s.get("runtime_mode", "docker")
+    if mode == "process":
+        return _get_process_svc()
+    return _get_docker_svc()
+
+
+def _get_regenerate_fn():
+    s = get_all_settings()
+    if s.get("runtime_mode", "docker") == "process":
+        from manager.nginx_config_service import regenerate as regen
+        return regen
+    from manager.traefik_config_service import regenerate as regen
+    return regen
+
+
+def _create_container(**kwargs):
+    return _get_runtime_svc().create_container(**kwargs)
+
+
+def _stop_container(name: str):
+    return _get_runtime_svc().stop_container(name)
+
+
+def _start_container(name: str):
+    return _get_runtime_svc().start_container(name)
+
+
+def _restart_container(name: str):
+    return _get_runtime_svc().restart_container(name)
+
+
+def _remove_container(name: str):
+    return _get_runtime_svc().remove_container(name)
+
+
+def _health_check_container(domain: str, timeout: int = 60, path_prefix: str = ""):
+    return _get_runtime_svc().health_check_container(domain, timeout, path_prefix)
+
+
+def _regenerate():
+    return _get_regenerate_fn()()
 
 ID_LENGTH = 6
 USERNAME_LENGTH = 8
@@ -124,7 +176,7 @@ def _wait_st_initialized(instance_id: str, timeout: int = 60) -> bool:
 def _rollback(instance_id: str, container: str):
     """Clean up a failed instance creation."""
     try:
-        remove_container(container)
+        _remove_container(container)
     except Exception:
         pass
     user_dir = USERS_DIR / instance_id
@@ -206,7 +258,7 @@ def create_instance(activation_key: str) -> dict:
         steps_done.append("render config")
 
         # create container
-        ok = create_container(
+        ok = _create_container(
             container_name=container,
             domain=domain,
             memory=DOCKER_MEMORY,
@@ -232,7 +284,7 @@ def create_instance(activation_key: str) -> dict:
         steps_done.append("wait init")
 
         # stop container and apply full API config
-        stop_container(container)
+        _stop_container(container)
         steps_done.append("docker stop")
 
         # apply API template (second pass — data/default-user)
@@ -245,11 +297,11 @@ def create_instance(activation_key: str) -> dict:
         steps_done.append("apply api config")
 
         # restart container
-        start_container(container)
+        _start_container(container)
         steps_done.append("docker restart")
 
         # wait for ST ready (path mode: domain already contains the full URL)
-        ready = health_check_container(domain, timeout=60)
+        ready = _health_check_container(domain, timeout=60)
         steps_done.append("wait ready")
 
         # test API and stream
@@ -282,7 +334,7 @@ def create_instance(activation_key: str) -> dict:
         steps_done.append("mark key used")
 
         # update Traefik
-        regenerate()
+        _regenerate()
 
         result = {
             "instance_id": instance_id,
@@ -411,7 +463,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
                 content = content.replace("{{" + k + "}}", v)
             config_tpl.write_text(content, encoding="utf-8")
 
-        ok = create_container(
+        ok = _create_container(
             container_name=container, domain=domain, memory=DOCKER_MEMORY,
             network=DOCKER_NETWORK, image=DOCKER_IMAGE,
             entrypoint=TRAEFIK_ENTRYPOINT, cert_resolver=TRAEFIK_CERT_RESOLVER,
@@ -429,14 +481,14 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         if not _wait_st_initialized(instance_id, timeout=60):
             raise RuntimeError("ST initialization timed out")
 
-        stop_container(container)
+        _stop_container(container)
 
         api_template = TEMPLATES_DIR / "sillytavern" / "data" / "default-user"
         if api_template.exists():
             render_config(instance_dir, vars_)
 
-        start_container(container)
-        ready = health_check_container(domain, timeout=60)
+        _start_container(container)
+        ready = _health_check_container(domain, timeout=60)
         url = f"{PUBLIC_SCHEME}://{domain}"
 
         now = datetime.now(timezone.utc).isoformat()
@@ -454,7 +506,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
                  1 if ready else 0, cf_record_id, custom_domain, path_prefix, now, client_ip, now, expires),
             )
 
-        regenerate()
+        _regenerate()
 
         return {
             "instance_id": instance_id,
@@ -636,7 +688,7 @@ def release_trial_instance(instance_id: str):
 
     container = _container_name(instance_id)
     try:
-        remove_container(container)
+        _remove_container(container)
     except Exception:
         pass
 
@@ -654,7 +706,7 @@ def release_trial_instance(instance_id: str):
             "UPDATE instances SET status='released', ready=0 WHERE instance_id=?",
             (instance_id,),
         )
-    regenerate()
+    _regenerate()
 
 
 def update_trial_activity(instance_id: str):
@@ -688,13 +740,13 @@ def get_trial_queue_status() -> dict:
 
 def stop_instance(instance_id: str):
     container = _container_name(instance_id)
-    stop_container(container)
+    _stop_container(container)
     with get_db() as conn:
         conn.execute(
             "UPDATE instances SET status = 'stopped' WHERE instance_id = ?",
             (instance_id,),
         )
-    regenerate()
+    _regenerate()
 
 
 def start_instance(instance_id: str):
@@ -704,24 +756,24 @@ def start_instance(instance_id: str):
         raise ValueError(f"Instance not found: {instance_id}")
     if row["status"] == "expired":
         raise ValueError("Cannot start expired instance, renew it first")
-    start_container(container)
+    _start_container(container)
     with get_db() as conn:
         conn.execute(
             "UPDATE instances SET status = 'running' WHERE instance_id = ?",
             (instance_id,),
         )
-    regenerate()
+    _regenerate()
 
 
 def restart_instance(instance_id: str):
     container = _container_name(instance_id)
-    restart_container(container)
+    _restart_container(container)
     with get_db() as conn:
         conn.execute(
             "UPDATE instances SET status = 'running', ready = 1 WHERE instance_id = ?",
             (instance_id,),
         )
-    regenerate()
+    _regenerate()
     return {"ok": True}
 
 
@@ -741,13 +793,13 @@ def renew_instance(instance_id: str, days: int = DEFAULT_DAYS):
         except Exception:
             pass
 
-    start_container(_container_name(instance_id))
+    _start_container(_container_name(instance_id))
     with get_db() as conn:
         conn.execute(
             "UPDATE instances SET status = 'running', expires_at = ? WHERE instance_id = ?",
             (expires_str, instance_id),
         )
-    regenerate()
+    _regenerate()
     return {"instance_id": instance_id, "expires_at": expires_str}
 
 
@@ -756,7 +808,7 @@ def delete_instance(instance_id: str):
     if not row:
         raise ValueError(f"Instance not found: {instance_id}")
     container = _container_name(instance_id)
-    remove_container(container)
+    _remove_container(container)
     if row["api_key"]:
         try:
             delete_proxy_key(instance_id)
@@ -776,7 +828,7 @@ def delete_instance(instance_id: str):
             "UPDATE instances SET status = 'deleted' WHERE instance_id = ?",
             (instance_id,),
         )
-    regenerate()
+    _regenerate()
 
 
 def get_instance(instance_id: str) -> dict | None:
@@ -811,12 +863,12 @@ def apply_api_config(instance_id: str) -> dict:
     if not api_template.exists():
         return {"ok": False, "error": "API 配置模板不存在"}
 
-    stop_container(inst["container_name"])
+    _stop_container(inst["container_name"])
     vars_ = _api_template_vars(instance_id, inst["username"], inst["password"], inst["api_key"],
                                inst.get("path_prefix", ""))
     render_config(instance_dir, vars_)
-    start_container(inst["container_name"])
-    regenerate()
+    _start_container(inst["container_name"])
+    _regenerate()
     return {"ok": True, "message": "API 配置已重新下发并重启容器"}
 
 
@@ -844,7 +896,7 @@ def check_expired():
         inst_id = row["instance_id"]
         container = _container_name(inst_id)
         try:
-            stop_container(container)
+            _stop_container(container)
         except Exception:
             pass
         if row["api_key"]:
@@ -857,7 +909,7 @@ def check_expired():
                 "UPDATE instances SET status = 'expired' WHERE instance_id = ?",
                 (inst_id,),
             )
-    regenerate()
+    _regenerate()
     return len(expired)
 
 
@@ -898,7 +950,7 @@ def check_instance(instance_id: str) -> dict:
     results = {}
     # Web check
     try:
-        ready = health_check_container(inst["domain"], timeout=10)
+        ready = _health_check_container(inst["domain"], timeout=10)
         with get_db() as conn:
             conn.execute(
                 "UPDATE instances SET web_status=?, web_checked_at=? WHERE instance_id=?",

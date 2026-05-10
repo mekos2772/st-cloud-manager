@@ -232,6 +232,12 @@
 <section id="s-cloudflare" class="section">
   <h1>域名管理</h1>
   <div class="form-col">
+    <div class="field"><label>运行环境</label>
+      <select id="cfg_runtime_mode">
+        <option value="docker">Docker 容器</option>
+        <option value="process">无 Docker（进程 + Nginx）</option>
+      </select>
+    </div>
     <div class="field"><label>路由模式</label>
       <select id="cfg_routing_mode" onchange="onRoutingModeChange()">
         <option value="subdomain">子域名模式（xxx.st.example.com）</option>
@@ -446,8 +452,8 @@ async function delBkp(n){if(!confirm('删除备份 '+n+'？'))return;try{await R
 // Routing mode
 function onRoutingModeChange(){const m=document.getElementById('cfg_routing_mode').value;document.getElementById('pathCfg').style.display=m==='path'?'block':'none';document.getElementById('cfg_domain_mode').parentElement.parentElement.style.display=m==='path'?'none':'block';document.getElementById('cfSection').style.display=(m==='subdomain'&&document.getElementById('cfg_domain_mode').value==='cloudflare')?'block':'none';}
 // Cloudflare
-async function loadCfConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('cfg_routing_mode').value=d.routing_mode||'subdomain';document.getElementById('cfg_domain_mode').value=d.domain_mode||'local';onRoutingModeChange()}catch(e){T(e.message,'err')}}
-async function saveCfConfig(){const d={};['routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
+async function loadCfConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['runtime_mode','routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('cfg_routing_mode').value=d.routing_mode||'subdomain';document.getElementById('cfg_domain_mode').value=d.domain_mode||'local';onRoutingModeChange()}catch(e){T(e.message,'err')}}
+async function saveCfConfig(){const d={};['runtime_mode','routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
 function showCfLoad(msg){const s=document.getElementById('cfStatus'),t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');s.style.display='block';t.textContent=msg;b.style.width='20%'}
 function showCfDone(ok,msg){const t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');b.style.width='100%';t.textContent=msg;t.style.color=ok?'var(--green)':'var(--red)';setTimeout(()=>{document.getElementById('cfStatus').style.display='none';t.style.color='#fff'},2500)}
 

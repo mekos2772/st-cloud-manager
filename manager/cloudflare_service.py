@@ -97,6 +97,8 @@ _CF_DEFAULTS = {
     "cf_ttl": "1",
     "cf_sync_delete": "true",
     "domain_mode": "local",  # "local" or "cloudflare"
+    # Runtime
+    "runtime_mode": "docker",  # "docker" or "process"
     # Routing
     "routing_mode": "subdomain",  # "subdomain" or "path"
     "base_domain": "",
@@ -119,6 +121,8 @@ def get_cf_settings() -> dict:
         result[k] = val if val else v
     result["cf_api_token"] = _mask_key(result["cf_api_token"])
     result["domain_mode"] = get_setting("domain_mode") or "local"
+    # Runtime settings
+    result["runtime_mode"] = get_setting("runtime_mode") or "docker"
     # Routing settings
     result["routing_mode"] = get_setting("routing_mode") or "subdomain"
     result["base_domain"] = get_setting("base_domain") or ""
