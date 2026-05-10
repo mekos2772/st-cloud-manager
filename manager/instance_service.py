@@ -40,16 +40,20 @@ def _get_process_svc():
 
 
 def _get_runtime_svc():
-    s = get_all_settings()
-    mode = s.get("runtime_mode", "docker")
+    # Env var ST_RUNTIME_MODE > DB setting > default "docker"
+    from manager.config import RUNTIME_MODE as ENV_MODE
+    db_mode = get_all_settings().get("runtime_mode", ENV_MODE)
+    mode = ENV_MODE if ENV_MODE != "docker" else db_mode
     if mode == "process":
         return _get_process_svc()
     return _get_docker_svc()
 
 
 def _get_regenerate_fn():
-    s = get_all_settings()
-    if s.get("runtime_mode", "docker") == "process":
+    from manager.config import RUNTIME_MODE as ENV_MODE
+    db_mode = get_all_settings().get("runtime_mode", ENV_MODE)
+    mode = ENV_MODE if ENV_MODE != "docker" else db_mode
+    if mode == "process":
         from manager.nginx_config_service import regenerate as regen
         return regen
     from manager.traefik_config_service import regenerate as regen

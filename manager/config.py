@@ -35,6 +35,8 @@ TRAEFIK_DYNAMIC_CONFIG = BASE_DIR / os.getenv("ST_TRAEFIK_DYNAMIC_CONFIG", "trae
 DOMAIN_SUFFIX = os.getenv("ST_DOMAIN_SUFFIX", "st.example.com")
 PUBLIC_SCHEME = os.getenv("ST_PUBLIC_SCHEME", "https" if TRAEFIK_TLS else "http")
 
+# Runtime mode: "docker" (default) or "process"
+RUNTIME_MODE = os.getenv("ST_RUNTIME_MODE", "docker")
 # Routing mode: "subdomain" (default) or "path"
 ROUTING_MODE = os.getenv("ST_ROUTING_MODE", "subdomain")
 BASE_DOMAIN = os.getenv("ST_BASE_DOMAIN", "st.example.com")
