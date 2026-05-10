@@ -30,11 +30,14 @@ ALLOWED_MOUNTS = {
 FORBIDDEN_HOST_PATHS = {"/", "/root", "/etc", "/proc", "/sys", "/dev", "/home", "/var/run", "/tmp", "/boot"}
 
 # Security defaults
-DEFAULT_MEMORY = os.getenv("ST_DOCKER_MEMORY", "768m")
-DEFAULT_MEMORY_SWAP = os.getenv("ST_DOCKER_MEMORY_SWAP", "1g")
-DEFAULT_CPUS = os.getenv("ST_DOCKER_CPUS", "1.0")
-DEFAULT_PIDS_LIMIT = os.getenv("ST_DOCKER_PIDS_LIMIT", "256")
+DEFAULT_MEMORY = os.getenv("ST_DOCKER_MEMORY", "512m")
+DEFAULT_MEMORY_SWAP = os.getenv("ST_DOCKER_MEMORY_SWAP", "768m")
+DEFAULT_CPUS = os.getenv("ST_DOCKER_CPUS", "0.5")
+DEFAULT_PIDS_LIMIT = os.getenv("ST_DOCKER_PIDS_LIMIT", "128")
 READ_ONLY_ROOTFS = os.getenv("ST_CONTAINER_READ_ONLY", "true").lower() in ("true", "1", "yes")
+TRIAL_MEMORY = os.getenv("ST_TRIAL_MEMORY", "256m")
+TRIAL_MEMORY_SWAP = os.getenv("ST_TRIAL_MEMORY_SWAP", "384m")
+NODE_MAX_HEAP = os.getenv("ST_NODE_MAX_HEAP", "256")
 
 
 def _validate_mounts(volumes: list[tuple[str, str]]) -> None:
@@ -83,6 +86,7 @@ def create_container(
     routing_mode: str = "subdomain",
     path_prefix: str = "",
     base_domain: str = "",
+    is_trial: bool = False,
 ) -> bool:
     # Validate mounts before creating container
     _validate_mounts([
@@ -91,17 +95,25 @@ def create_container(
         (user_plugins_dir, "/home/node/app/plugins"),
     ])
 
+    # Trial instances get lower resource limits
+    mem = TRIAL_MEMORY if is_trial else memory
+    memswap = TRIAL_MEMORY_SWAP if is_trial else DEFAULT_MEMORY_SWAP
+    cpus = DEFAULT_CPUS
+    pids = DEFAULT_PIDS_LIMIT
+
     cmd = [
         "docker", "run", "-d",
         "--name", container_name,
         "--restart", "unless-stopped",
         "--network", network,
         # Resource limits
-        "--memory", memory,
-        "--memory-swap", DEFAULT_MEMORY_SWAP,
-        "--cpus", DEFAULT_CPUS,
-        "--pids-limit", DEFAULT_PIDS_LIMIT,
+        "--memory", mem,
+        "--memory-swap", memswap,
+        "--cpus", cpus,
+        "--pids-limit", str(pids),
         "--ulimit", "nofile=4096:4096",
+        # Limit Node.js heap to leave room for OS
+        "--env", f"NODE_OPTIONS=--max-old-space-size={NODE_MAX_HEAP}",
         # Security hardening
         "--security-opt", "no-new-privileges:true",
         "--cap-drop", "ALL",

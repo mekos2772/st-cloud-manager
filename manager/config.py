@@ -25,7 +25,7 @@ DB_PATH = BASE_DIR / os.getenv("ST_DB_PATH", "data.db")
 # Docker
 DOCKER_NETWORK = os.getenv("ST_DOCKER_NETWORK", "st_proxy")
 DOCKER_IMAGE = os.getenv("ST_DOCKER_IMAGE", "ghcr.io/sillytavern/sillytavern:latest")
-DOCKER_MEMORY = os.getenv("ST_DOCKER_MEMORY", "768m")
+DOCKER_MEMORY = os.getenv("ST_DOCKER_MEMORY", "512m")
 
 # Traefik
 TRAEFIK_ENTRYPOINT = os.getenv("ST_TRAEFIK_ENTRYPOINT", "websecure")

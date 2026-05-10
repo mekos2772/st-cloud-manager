@@ -420,6 +420,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
             user_plugins_dir=str(plugins_dir),
             routing_mode=routing_mode, path_prefix=path_prefix,
             base_domain=base_domain if routing_mode == "path" else "",
+            is_trial=True,
         )
         if not ok:
             raise RuntimeError("Failed to create Docker container")
