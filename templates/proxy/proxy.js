@@ -34,9 +34,11 @@ function rewriteBody(body, contentType) {
         r = r.replace(/url\((["']?)\/(?!\/)/g, `url($1${PREFIX_WITH_TRAILING}`);
     }
     if (contentType.includes('javascript')) {
-        r = r.replace(/(["'`])\/(api|scripts|css|fonts|images|themes|webfonts|backgrounds|img|assets|thumbnail|backups|modifiers|objects|sprites|sounds)\//g,
+        r = r.replace(/(["'`])\/(api|scripts|css|fonts|images|themes|webfonts|backgrounds|img|assets|thumbnail|thumbnails|backups|modifiers|objects|sprites|sounds|socket\.io|characters|vectors|user|themes|extensions)\//g,
             `$1${PREFIX_WITH_TRAILING}$2/`);
         r = r.replace(/(["'`])\/(favicon\.)/g, `$1${PREFIX_WITH_TRAILING}$2`);
+        // Socket.IO standalone path
+        r = r.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_WITH_TRAILING}/socket.io`);
     }
     return r;
 }
