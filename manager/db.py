@@ -62,6 +62,10 @@ def _migrate(conn: sqlite3.Connection):
         ("ready", "INTEGER DEFAULT 0"),
         ("cf_record_id", "TEXT"),
         ("custom_domain", "TEXT"),
+        ("path_prefix", "TEXT"),
+        ("is_trial", "INTEGER DEFAULT 0"),
+        ("last_activity", "TEXT"),
+        ("client_ip", "TEXT"),
     ]
     for col_name, col_def in new_columns:
         if not _column_exists(conn, "instances", col_name):
@@ -93,6 +97,16 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'running',
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS trial_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_ip TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'waiting',
+                instance_id TEXT,
+                created_at TEXT NOT NULL,
+                processed_at TEXT,
+                error TEXT
             );
         """)
         _migrate(conn)

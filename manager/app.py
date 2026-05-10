@@ -20,6 +20,8 @@ from manager.instance_service import (
     renew_instance, delete_instance, get_instance, list_instances,
     apply_api_config, apply_api_config_all, check_expired,
     get_summary, check_instance, get_instance_logs, get_instance_inspect,
+    create_trial_instance, get_trial_queue_status, release_trial_instance,
+    update_trial_activity,
 )
 from manager.scheduler import run_scheduler
 from manager.settings_service import (
@@ -78,6 +80,32 @@ def activate(req: ActivateRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trial/status")
+def trial_status():
+    return get_trial_queue_status()
+
+
+@app.post("/api/trial/create")
+def trial_create(request: Request):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    try:
+        return create_trial_instance(client_ip)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/trial/activity/{instance_id}")
+def trial_activity(instance_id: str, request: Request):
+    """Heartbeat endpoint — ST frontend calls this to signal activity."""
+    try:
+        update_trial_activity(instance_id)
+        return {"ok": True}
+    except Exception:
+        return {"ok": False}
 
 
 # ─── admin: summary ───

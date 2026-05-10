@@ -35,6 +35,11 @@ TRAEFIK_DYNAMIC_CONFIG = BASE_DIR / os.getenv("ST_TRAEFIK_DYNAMIC_CONFIG", "trae
 DOMAIN_SUFFIX = os.getenv("ST_DOMAIN_SUFFIX", "st.example.com")
 PUBLIC_SCHEME = os.getenv("ST_PUBLIC_SCHEME", "https" if TRAEFIK_TLS else "http")
 
+# Routing mode: "subdomain" (default) or "path"
+ROUTING_MODE = os.getenv("ST_ROUTING_MODE", "subdomain")
+BASE_DOMAIN = os.getenv("ST_BASE_DOMAIN", "st.example.com")
+PATH_PREFIX_LENGTH = int(os.getenv("ST_PATH_PREFIX_LENGTH", "8"))
+
 # API Proxy
 PROXY_BASE_URL = os.getenv("ST_PROXY_BASE_URL", "https://api-proxy.example.com/v1")
 PROXY_MASTER_KEY = os.getenv("ST_PROXY_MASTER_KEY", "")
@@ -53,3 +58,10 @@ DEFAULT_DAYS = int(os.getenv("ST_DEFAULT_DAYS", "30"))
 
 # Admin
 ADMIN_API_KEY = os.getenv("ST_ADMIN_API_KEY", "")
+
+# Trial mode
+TRIAL_ENABLED = os.getenv("ST_TRIAL_ENABLED", "false").lower() in ("true", "1", "yes")
+TRIAL_MAX_INSTANCES = int(os.getenv("ST_TRIAL_MAX_INSTANCES", "3"))
+TRIAL_IDLE_TIMEOUT = int(os.getenv("ST_TRIAL_IDLE_TIMEOUT", "600"))
+TRIAL_MAX_MEMORY_PCT = int(os.getenv("ST_TRIAL_MAX_MEMORY_PCT", "85"))
+TRIAL_QUEUE_ENABLED = os.getenv("ST_TRIAL_QUEUE_ENABLED", "true").lower() in ("true", "1", "yes")

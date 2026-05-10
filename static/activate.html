@@ -93,12 +93,23 @@
 
 <div class="card">
   <h1>激活 <span>ST</span> 酒馆</h1>
-  <p class="sub">输入激活 Key，自动创建独立 SillyTavern 实例并下发 API 配置。</p>
+  <p class="sub" id="subtitle">输入激活 Key，自动创建独立 SillyTavern 实例并下发 API 配置。</p>
 
   <div class="error" id="error"></div>
-  <label>激活 Key</label>
-  <input type="text" id="keyInput" placeholder="ST-XXXX-XXXX" autocomplete="off" autofocus>
-  <button id="btn" onclick="doActivate()">激 活</button>
+
+  <!-- Key mode (default) -->
+  <div id="keyMode">
+    <label>激活 Key</label>
+    <input type="text" id="keyInput" placeholder="ST-XXXX-XXXX" autocomplete="off" autofocus>
+    <button id="btn" onclick="doActivate()">激 活</button>
+  </div>
+
+  <!-- Trial mode -->
+  <div id="trialMode" style="display:none">
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px" id="trialInfo"></p>
+    <button id="trialBtn" onclick="doTrialCreate()">一 键 创 建</button>
+    <div id="queueInfo" style="display:none;margin-top:12px;padding:12px;background:rgba(94,106,210,0.08);border-radius:8px;font-size:13px"></div>
+  </div>
 
   <div class="steps" id="progress"><div id="stepList"></div></div>
 
@@ -162,6 +173,89 @@ async function doActivate(){
 
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 document.getElementById('keyInput').addEventListener('keydown',function(e){ if(e.key==='Enter') doActivate(); });
+
+// Trial mode
+async function initTrialMode(){
+  try{
+    const r=await fetch('/api/trial/status');
+    const d=await r.json();
+    if(d.trial_enabled){
+      document.getElementById('keyMode').style.display='none';
+      document.getElementById('trialMode').style.display='block';
+      document.getElementById('subtitle').textContent='一键创建 SillyTavern 体验实例，超过'+Math.round(d.idle_timeout/60)+'分钟无操作自动释放。';
+      document.getElementById('trialInfo').textContent='当前 '+d.active_trials+'/'+d.max_trials+' 个体验实例运行中'+(d.queue_length>0?'，排队 '+d.queue_length+' 人':'');
+    }
+  }catch(e){}
+}
+
+async function doTrialCreate(){
+  const btn=document.getElementById('trialBtn'), errEl=document.getElementById('error'), res=document.getElementById('result'), prog=document.getElementById('progress');
+  btn.disabled=true; errEl.style.display='none'; res.style.display='none';
+  prog.style.display='block'; document.getElementById('stepList').innerHTML=renderSteps(0,-1);
+
+  try {
+    document.getElementById('stepList').innerHTML=renderSteps(1,-1); await sleep(300);
+    const resp=await fetch('/api/trial/create',{method:'POST'});
+    const data=await resp.json();
+
+    if(!resp.ok){
+      // Check if queued
+      if(data.queued){
+        document.getElementById('queueInfo').style.display='block';
+        document.getElementById('queueInfo').innerHTML='⏳ '+data.message+'<br><small>系统资源紧张，请耐心等待，队列会自动处理。</small>';
+        prog.style.display='none'; btn.disabled=false;
+        // Poll queue status
+        pollQueue();
+        return;
+      }
+      document.getElementById('stepList').innerHTML=renderSteps(0,1);
+      errEl.textContent=data.detail||'创建失败'; errEl.style.display='block'; btn.disabled=false; prog.style.display='none';
+      return;
+    }
+
+    document.getElementById('stepList').innerHTML=renderSteps(10,-1);
+
+    document.getElementById('resUrl').href=data.url; document.getElementById('resUrl').textContent=data.url;
+    document.getElementById('resUser').textContent=data.username; document.getElementById('resPass').textContent=data.password;
+    document.getElementById('resExp').textContent=data.expires_at||'—';
+    document.getElementById('resApi').textContent='unchecked';
+    document.getElementById('resStream').textContent='unchecked';
+    document.getElementById('resTitle').textContent='体验实例创建成功';
+    document.getElementById('resWarn').textContent='体验实例超过10分钟无操作将自动释放。';
+    res.style.display='block'; prog.style.display='none';
+    btn.disabled=false;
+    startActivityPing(data.instance_id);
+  } catch(e){
+    document.getElementById('stepList').innerHTML=renderSteps(0,1);
+    errEl.textContent='创建失败: '+e.message; errEl.style.display='block';
+    btn.disabled=false; prog.style.display='none';
+  }
+}
+
+async function pollQueue(){
+  for(let i=0;i<30;i++){
+    await sleep(10000);
+    try{
+      const r=await fetch('/api/trial/status');
+      const d=await r.json();
+      if(d.queue_length===0 && d.active_trials>0){
+        document.getElementById('queueInfo').innerHTML='✅ 排队完成，您的实例已创建。请刷新页面查看。';
+        setTimeout(()=>location.reload(),2000);
+        return;
+      }
+      document.getElementById('queueInfo').innerHTML='⏳ 排队中，前方 '+(d.queue_length>0?d.queue_length-1:0)+' 人...';
+    }catch(e){}
+  }
+  document.getElementById('queueInfo').innerHTML='⚠ 排队超时，请刷新页面重试。';
+}
+
+function startActivityPing(instanceId){
+  setInterval(async ()=>{
+    try { await fetch('/api/trial/activity/'+instanceId,{method:'POST'}); } catch(e){}
+  }, 60000); // ping every 60s
+}
+
+initTrialMode();
 </script>
 </body>
 </html>

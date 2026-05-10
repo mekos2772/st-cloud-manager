@@ -24,6 +24,16 @@ _DEFAULTS = {
     "cf_ttl": "1",
     "cf_sync_delete": "true",
     "domain_mode": "local",
+    # Routing
+    "routing_mode": "subdomain",
+    "base_domain": "",
+    "path_prefix_length": "8",
+    # Trial mode
+    "trial_enabled": "false",
+    "trial_max_instances": "3",
+    "trial_idle_timeout": "600",
+    "trial_max_memory_pct": "85",
+    "trial_queue_enabled": "true",
 }
 
 

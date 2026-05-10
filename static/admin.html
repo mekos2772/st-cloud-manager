@@ -148,6 +148,7 @@
       <a href="#" data-sec="keys">Key 管理</a>
       <a href="#" data-sec="apiconfig">API 配置</a>
       <a href="#" data-sec="cloudflare">Cloudflare</a>
+      <a href="#" data-sec="trial">体验模式</a>
       <a href="#" data-sec="security">安全</a>
       <a href="#" data-sec="diagnose">诊断</a>
       <a href="#" data-sec="backups">备份</a>
@@ -231,7 +232,18 @@
 <section id="s-cloudflare" class="section">
   <h1>域名管理</h1>
   <div class="form-col">
-    <div class="field"><label>域名模式</label>
+    <div class="field"><label>路由模式</label>
+      <select id="cfg_routing_mode" onchange="onRoutingModeChange()">
+        <option value="subdomain">子域名模式（xxx.st.example.com）</option>
+        <option value="path">路径模式（ceshi.com/st-xxx）</option>
+      </select>
+    </div>
+    <div id="pathCfg" style="display:none">
+      <div class="field"><label>基础域名</label><input id="cfg_base_domain" placeholder="ceshi.com（不带协议，不带路径）"></div>
+      <div class="field"><label>路径后缀长度</label><input id="cfg_path_prefix_length" value="8" min="6" max="20"></div>
+      <p style="color:var(--text-dim);font-size:11px;margin:-8px 0 12px">容器通过 ceshi.com/st-{随机后缀} 访问。后缀越长越难被猜测。</p>
+    </div>
+    <div class="field"><label>子域名模式</label>
       <select id="cfg_domain_mode" onchange="document.getElementById('cfSection').style.display=this.value==='cloudflare'?'block':'none'">
         <option value="local">本地（127-0-0-1.sslip.io）</option>
         <option value="cloudflare">Cloudflare DNS</option>
@@ -269,6 +281,37 @@
   </div>
   <pre id="cfOutput" style="margin-top:14px;display:none"></pre>
   </div>
+</section>
+
+<!-- 体验模式 -->
+<section id="s-trial" class="section">
+  <h1>体验模式</h1>
+  <div class="form-col">
+    <div class="field"><label>启用体验模式</label>
+      <select id="cfg_trial_enabled" onchange="toggleTrialCfg()">
+        <option value="false">关闭（需要激活 Key）</option>
+        <option value="true">开启（免 Key 一键创建）</option>
+      </select>
+    </div>
+    <div id="trialCfg">
+      <div class="field"><label>最大体验实例数</label><input id="cfg_trial_max_instances" value="3" min="1" max="20"></div>
+      <div class="field"><label>空闲释放时间（秒）</label><input id="cfg_trial_idle_timeout" value="600" min="60"></div>
+      <p style="color:var(--text-dim);font-size:11px;margin:-8px 0 8px">实例超过此时间无任何操作自动释放。默认 600 秒 = 10 分钟。</p>
+      <div class="field"><label>内存阈值（%）</label><input id="cfg_trial_max_memory_pct" value="85" min="50" max="99"></div>
+      <p style="color:var(--text-dim);font-size:11px;margin:-8px 0 8px">系统内存使用率超过此值后新请求自动排队。</p>
+      <div class="field"><label>自动排队</label>
+        <select id="cfg_trial_queue_enabled">
+          <option value="true">开启（资源不足时排队等待）</option>
+          <option value="false">关闭（资源不足时直接拒绝）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button class="primary" onclick="saveTrialConfig()">保存配置</button>
+    <button onclick="loadTrialConfig()">刷新</button>
+  </div>
+  <div id="trialStatus" style="margin-top:16px"></div>
 </section>
 
 <!-- 安全 -->
@@ -327,7 +370,7 @@ function T(msg,c){const e=document.getElementById('toast');e.textContent=msg;e.c
 function B(v){const m={'running':'badge-running','stopped':'badge-stopped','expired':'badge-expired','deleted':'badge-deleted','ok':'badge-ok','ready':'badge-ok','failed':'badge-failed','timeout':'badge-failed','unchecked':'badge-un'};return `<span class="badge ${m[v]||'badge-un'}">${v}</span>`}
 
 // 导航
-document.querySelectorAll('nav .links a').forEach(a=>a.addEventListener('click',function(e){e.preventDefault();document.querySelectorAll('nav .links a').forEach(l=>l.classList.remove('active'));this.classList.add('active');const s=this.dataset.sec;document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));document.getElementById('s-'+s).classList.add('active');const fn={dashboard:loadDashboard,instances:loadInstances,keys:loadKeys,apiconfig:loadApiConfig,backups:loadBackups,security:loadSecurity,cloudflare:loadCfConfig}[s];if(fn)fn()}));
+document.querySelectorAll('nav .links a').forEach(a=>a.addEventListener('click',function(e){e.preventDefault();document.querySelectorAll('nav .links a').forEach(l=>l.classList.remove('active'));this.classList.add('active');const s=this.dataset.sec;document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));document.getElementById('s-'+s).classList.add('active');const fn={dashboard:loadDashboard,instances:loadInstances,keys:loadKeys,apiconfig:loadApiConfig,backups:loadBackups,security:loadSecurity,cloudflare:loadCfConfig,trial:loadTrialConfig}[s];if(fn)fn()}));
 
 async function loadDashboard(){try{const d=await R('GET','/api/admin/summary');document.getElementById('dashCards').innerHTML=`
   <div class="card"><div class="num purple">${d.total_instances}</div><div class="lbl">实例总数</div></div>
@@ -345,8 +388,8 @@ async function loadInstances(){try{const s=document.getElementById('instFilter')
   <td>${B(i.web_status||'unchecked')}</td><td>${B(i.api_status||'unchecked')}</td><td>${B(i.stream_status||'unchecked')}</td>
   <td>${(i.expires_at||'').substr(0,10)}</td>
   <td><div class="actions">
-    <button onclick="window.open('http://'+'${i.domain}')">打开</button>
-    <button onclick="navigator.clipboard.writeText('http://${i.domain}')">复制地址</button>
+    <button onclick="window.open('//'+'${i.domain}')">打开</button>
+    <button onclick="navigator.clipboard.writeText('//${i.domain}')">复制地址</button>
     <button onclick="navigator.clipboard.writeText('${i.username} / ${i.password}')">复制账号</button>
     ${i.status!=='running'?`<button onclick="doOp('start','${i.instance_id}')">启动</button>`:''}
     ${i.status==='running'?`<button onclick="doOp('stop','${i.instance_id}')">停止</button>`:''}
@@ -400,9 +443,11 @@ async function loadBackups(){try{const d=await R('GET','/api/admin/backup/list')
 async function createBackup(){try{const r=await R('POST','/api/admin/backup/create');T('备份完成: '+r.name,'ok');loadBackups()}catch(e){T(e.message,'err')}}
 async function delBkp(n){if(!confirm('删除备份 '+n+'？'))return;try{await R('DELETE','/api/admin/backup/'+n);T('已删除','ok');loadBackups()}catch(e){T(e.message,'err')}}
 
+// Routing mode
+function onRoutingModeChange(){const m=document.getElementById('cfg_routing_mode').value;document.getElementById('pathCfg').style.display=m==='path'?'block':'none';document.getElementById('cfg_domain_mode').parentElement.parentElement.style.display=m==='path'?'none':'block';document.getElementById('cfSection').style.display=(m==='subdomain'&&document.getElementById('cfg_domain_mode').value==='cloudflare')?'block':'none';}
 // Cloudflare
-async function loadCfConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('cfSection').style.display=d.domain_mode==='cloudflare'?'block':'none'}catch(e){T(e.message,'err')}}
-async function saveCfConfig(){const d={};['domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
+async function loadCfConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});document.getElementById('cfg_routing_mode').value=d.routing_mode||'subdomain';document.getElementById('cfg_domain_mode').value=d.domain_mode||'local';onRoutingModeChange()}catch(e){T(e.message,'err')}}
+async function saveCfConfig(){const d={};['routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
 function showCfLoad(msg){const s=document.getElementById('cfStatus'),t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');s.style.display='block';t.textContent=msg;b.style.width='20%'}
 function showCfDone(ok,msg){const t=document.getElementById('cfStatusText'),b=document.getElementById('cfStatusBar');b.style.width='100%';t.textContent=msg;t.style.color=ok?'var(--green)':'var(--red)';setTimeout(()=>{document.getElementById('cfStatus').style.display='none';t.style.color='#fff'},2500)}
 
@@ -427,6 +472,11 @@ async function loadSecurity(){try{const d=await R('GET','/api/admin/security/doc
   }
   if(d.advice&&d.advice.length){T('风险建议: '+d.advice[0],'err')}
 }catch(e){T(e.message,'err')}}
+
+// Trial mode
+function toggleTrialCfg(){document.getElementById('trialCfg').style.display=document.getElementById('cfg_trial_enabled').value==='true'?'block':'none';}
+async function loadTrialConfig(){try{const d=await R('GET','/api/admin/cloudflare/settings');['trial_enabled','trial_max_instances','trial_idle_timeout','trial_max_memory_pct','trial_queue_enabled'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)el.value=d[k]||''});toggleTrialCfg();const s=await R('GET','/api/trial/status');document.getElementById('trialStatus').innerHTML=`<p style="font-size:13px;color:var(--text-dim)">运行中: ${s.active_trials}/${s.max_trials} | 排队: ${s.queue_length} | 空闲释放: ${Math.round(s.idle_timeout/60)}分钟</p>`}catch(e){T(e.message,'err')}}
+async function saveTrialConfig(){const d={};['trial_enabled','trial_max_instances','trial_idle_timeout','trial_max_memory_pct','trial_queue_enabled'].forEach(k=>d[k]=document.getElementById('cfg_'+k).value);['routing_mode','base_domain','path_prefix_length','domain_mode','cf_api_token','cf_zone_id','cf_zone_name','cf_base_domain','cf_record_type','cf_record_target','cf_proxied','cf_ttl','cf_sync_delete'].forEach(k=>{const el=document.getElementById('cfg_'+k);if(el)d[k]=el.value});try{await R('POST','/api/admin/cloudflare/settings',d);T('已保存','ok')}catch(e){T(e.message,'err')}}
 
 loadDashboard();
 </script>

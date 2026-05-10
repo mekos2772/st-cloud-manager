@@ -97,18 +97,38 @@ _CF_DEFAULTS = {
     "cf_ttl": "1",
     "cf_sync_delete": "true",
     "domain_mode": "local",  # "local" or "cloudflare"
+    # Routing
+    "routing_mode": "subdomain",  # "subdomain" or "path"
+    "base_domain": "",
+    "path_prefix_length": "8",
+    # Trial mode
+    "trial_enabled": "false",
+    "trial_max_instances": "3",
+    "trial_idle_timeout": "600",
+    "trial_max_memory_pct": "85",
+    "trial_queue_enabled": "true",
 }
 
 
 def get_cf_settings() -> dict:
-    """Return Cloudflare settings with token masked."""
+    """Return Cloudflare and routing settings with token masked."""
+    from manager.settings_service import _DEFAULTS
     result = {}
     for k, v in _CF_DEFAULTS.items():
         val = get_setting(k)
         result[k] = val if val else v
     result["cf_api_token"] = _mask_key(result["cf_api_token"])
-    # domain_mode is also returned via settings_service
     result["domain_mode"] = get_setting("domain_mode") or "local"
+    # Routing settings
+    result["routing_mode"] = get_setting("routing_mode") or "subdomain"
+    result["base_domain"] = get_setting("base_domain") or ""
+    result["path_prefix_length"] = get_setting("path_prefix_length") or "8"
+    # Trial settings
+    result["trial_enabled"] = get_setting("trial_enabled") or "false"
+    result["trial_max_instances"] = get_setting("trial_max_instances") or "3"
+    result["trial_idle_timeout"] = get_setting("trial_idle_timeout") or "600"
+    result["trial_max_memory_pct"] = get_setting("trial_max_memory_pct") or "85"
+    result["trial_queue_enabled"] = get_setting("trial_queue_enabled") or "true"
     return result
 
 

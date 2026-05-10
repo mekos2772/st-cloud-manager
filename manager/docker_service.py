@@ -15,8 +15,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from manager.config import PUBLIC_SCHEME
+from manager.config import PUBLIC_SCHEME, BASE_DIR
 
 # Allowed mount targets — anything else is rejected
 ALLOWED_MOUNTS = {
@@ -79,6 +80,9 @@ def create_container(
     user_config_dir: str,
     user_data_dir: str,
     user_plugins_dir: str,
+    routing_mode: str = "subdomain",
+    path_prefix: str = "",
+    base_domain: str = "",
 ) -> bool:
     # Validate mounts before creating container
     _validate_mounts([
@@ -107,10 +111,33 @@ def create_container(
         "-v", f"{user_plugins_dir}:/home/node/app/plugins",
         # Traefik labels
         "--label", "traefik.enable=true",
-        "--label", f"traefik.http.routers.{container_name}.rule=Host(`{domain}`)",
-        "--label", f"traefik.http.routers.{container_name}.entrypoints={entrypoint}",
-        "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
     ]
+
+    # Route rule differs by routing mode
+    if routing_mode == "path" and path_prefix:
+        # Path-based: Host(base_domain) && PathPrefix(/st-xxx)
+        cmd.extend([
+            "--label", f"traefik.http.routers.{container_name}.rule=Host(`{base_domain}`) && PathPrefix(`{path_prefix}`)",
+            "--label", f"traefik.http.routers.{container_name}.entrypoints={entrypoint}",
+            "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
+            # Middleware to strip prefix before reaching container proxy
+            "--label", f"traefik.http.middlewares.{container_name}-strip.stripprefix.prefixes={path_prefix}",
+            "--label", f"traefik.http.routers.{container_name}.middlewares={container_name}-strip",
+        ])
+        # Mount proxy script and override entrypoint
+        proxy_dir = BASE_DIR / "templates" / "proxy"
+        cmd.extend([
+            "-v", f"{proxy_dir}:/proxy:ro",
+            "--entrypoint", "/proxy/entrypoint.sh",
+            "-e", f"ST_PATH_PREFIX={path_prefix}",
+        ])
+    else:
+        # Subdomain-based: Host(domain)
+        cmd.extend([
+            "--label", f"traefik.http.routers.{container_name}.rule=Host(`{domain}`)",
+            "--label", f"traefik.http.routers.{container_name}.entrypoints={entrypoint}",
+            "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
+        ])
 
     # Read-only rootfs (optional — ST may fail to start)
     if READ_ONLY_ROOTFS:
@@ -162,8 +189,11 @@ def get_container_ip(name: str) -> str | None:
     return ip if ip else None
 
 
-def health_check_container(domain: str, timeout: int = 60) -> bool:
-    url = f"{PUBLIC_SCHEME}://{domain}"
+def health_check_container(domain: str, timeout: int = 60, path_prefix: str = "") -> bool:
+    if path_prefix:
+        url = f"{PUBLIC_SCHEME}://{domain}{path_prefix}"
+    else:
+        url = f"{PUBLIC_SCHEME}://{domain}"
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
