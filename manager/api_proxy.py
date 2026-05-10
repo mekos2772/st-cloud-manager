@@ -81,8 +81,9 @@ def _build_headers(request: Request) -> dict:
 
 
 async def _stream_response(method: str, url: str, headers: dict, content: bytes):
-    """Stream the upstream response back to the client chunk-by-chunk."""
-    async with httpx.AsyncClient(timeout=120) as client:
+    """Stream upstream → client. Raw bytes + original headers pass through,
+    so the final client (browser/Cloudflare) handles Content-Encoding correctly."""
+    async with httpx.AsyncClient(timeout=120, http2=False) as client:
         async with client.stream(method, url, headers=headers, content=content) as resp:
             yield resp.status_code
             yield dict(resp.headers)
@@ -103,8 +104,8 @@ async def proxy_chat_completions(request: Request):
     status_code = await gen.__anext__()
     resp_headers = await gen.__anext__()
 
-    # Filter hop-by-hop headers from upstream
-    for h in ("transfer-encoding", "content-encoding", "content-length", "connection"):
+    # Only strip hop-by-hop headers — keep Content-Encoding so the chain handles it correctly
+    for h in ("transfer-encoding", "connection", "keep-alive"):
         resp_headers.pop(h, None)
 
     return StreamingResponse(
@@ -131,8 +132,13 @@ async def proxy_models(request: Request):
             f"{API_BASE_URL}/v1/models",
             headers={"Authorization": f"Bearer {MASTER_API_KEY}"},
         )
+    # httpx auto-decompresses non-stream responses, so body is raw now.
+    # Remove content-encoding from forwarded headers to match.
+    headers = dict(resp.headers)
+    headers.pop("content-encoding", None)
+    headers.pop("transfer-encoding", None)
     return StreamingResponse(
         resp.aiter_bytes(),
         status_code=resp.status_code,
-        headers=dict(resp.headers),
+        headers=headers,
     )
