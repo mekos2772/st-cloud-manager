@@ -1,7 +1,7 @@
 const http = require('http');
-const ST_PORT = 8001;
+const ST_PORT = parseInt(process.env.ST_PORT) || 8001;
 const PREFIX = process.env.ST_PATH_PREFIX || '';
-const LISTEN_PORT = 8000;
+const LISTEN_PORT = parseInt(process.env.ST_PROXY_PORT) || 8000;
 
 if (!PREFIX) {
     console.error('[proxy] ST_PATH_PREFIX env var is required');

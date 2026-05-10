@@ -135,39 +135,44 @@ def create_container(
         print(f"[ERROR] Instance directory not found: {instance_dir}", file=sys.stderr)
         return False
 
-    # Symlink shared ST release files to save disk
     _ensure_symlink_targets(instance_dir)
 
     used = _get_used_ports()
-    port = _next_available_port(used)
+    st_port = _next_available_port(used)
+    used.add(st_port)
 
-    # Write port into config.yaml (located at config/config.yaml per ST convention)
+    # Path mode: need a proxy to rewrite absolute URLs in ST responses
+    use_proxy = bool(path_prefix)
+    proxy_port = st_port
+    if use_proxy:
+        proxy_port = st_port
+        st_port = _next_available_port(used)
+
+    # Write ST's internal port into config.yaml
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
         content = config_yaml.read_text(encoding="utf-8")
-        content = content.replace("port: 8000", f"port: {port}")
-        content = content.replace("port: 8001", f"port: {port}")
+        content = content.replace("port: 8000", f"port: {st_port}")
+        content = content.replace("port: 8001", f"port: {st_port}")
         config_yaml.write_text(content, encoding="utf-8")
 
-    # ST expects config.yaml at CWD root → symlink to config/config.yaml (matches Dockerfile)
+    # config.yaml symlink (matches ST Dockerfile convention)
     root_config = instance_dir / "config.yaml"
     if root_config.is_symlink():
         root_config.unlink()
     if not root_config.exists():
         try:
-            root_config.symlink_to(instance_dir / "config" / "config.yaml")
+            root_config.symlink_to(config_yaml)
         except OSError:
             import shutil
             shutil.copy2(str(config_yaml), str(root_config))
 
     env = os.environ.copy()
     env["NODE_OPTIONS"] = f"--max-old-space-size={NODE_MAX_HEAP}"
-    if path_prefix:
-        env["ST_PATH_PREFIX"] = path_prefix
 
-    # Start ST process
+    # Start ST on internal port
     try:
-        proc = subprocess.Popen(
+        st_proc = subprocess.Popen(
             [NODE_BIN, "server.js"],
             cwd=str(instance_dir),
             env=env,
@@ -176,11 +181,33 @@ def create_container(
             start_new_session=True,
         )
     except Exception as e:
-        print(f"[ERROR] Failed to start process: {e}", file=sys.stderr)
+        print(f"[ERROR] Failed to start ST: {e}", file=sys.stderr)
         return False
 
-    _pid_file(instance_id).write_text(str(proc.pid))
-    _port_file(instance_id).write_text(str(port))
+    # For path routing: start proxy.js to rewrite absolute URLs in responses
+    if use_proxy:
+        proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
+        if proxy_js.exists():
+            penv = env.copy()
+            penv["ST_PATH_PREFIX"] = path_prefix
+            penv["ST_PORT"] = str(st_port)
+            try:
+                subprocess.Popen(
+                    [NODE_BIN, str(proxy_js)],
+                    cwd=str(instance_dir),
+                    env=penv,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception as e:
+                print(f"[ERROR] Failed to start proxy: {e}", file=sys.stderr)
+                # Proxy failed but ST is running — continue without rewrite
+        else:
+            print(f"[WARN] proxy.js not found at {proxy_js}, path rewriting disabled", file=sys.stderr)
+
+    _pid_file(instance_id).write_text(str(st_proc.pid))
+    _port_file(instance_id).write_text(str(proxy_port))
     return True
 
 
@@ -212,20 +239,38 @@ def start_container(name: str) -> bool:
     if not instance_dir.exists():
         return False
 
+    # Get path_prefix from DB
+    from manager.db import get_db
+    path_prefix = ""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT path_prefix FROM instances WHERE instance_id=? AND status='running'",
+            (instance_id,),
+        ).fetchone()
+    if row and row["path_prefix"]:
+        path_prefix = row["path_prefix"]
+
     _ensure_symlink_targets(instance_dir)
 
     pf = _port_file(instance_id)
     if pf.exists():
-        port = int(pf.read_text().strip())
+        proxy_port = int(pf.read_text().strip())
     else:
         used = _get_used_ports()
-        port = _next_available_port(used)
+        proxy_port = _next_available_port(used)
+
+    use_proxy = bool(path_prefix)
+    st_port = proxy_port
+    if use_proxy:
+        used = _get_used_ports()
+        used.add(proxy_port)
+        st_port = _next_available_port(used)
 
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
         content = config_yaml.read_text(encoding="utf-8")
-        content = content.replace("port: 8000", f"port: {port}")
-        content = content.replace("port: 8001", f"port: {port}")
+        content = content.replace("port: 8000", f"port: {st_port}")
+        content = content.replace("port: 8001", f"port: {st_port}")
         config_yaml.write_text(content, encoding="utf-8")
 
     env = os.environ.copy()
@@ -244,8 +289,23 @@ def start_container(name: str) -> bool:
         print(f"[ERROR] start failed: {e}", file=sys.stderr)
         return False
 
+    if use_proxy:
+        proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
+        if proxy_js.exists():
+            penv = env.copy()
+            penv["ST_PATH_PREFIX"] = path_prefix
+            penv["ST_PORT"] = str(st_port)
+            subprocess.Popen(
+                [NODE_BIN, str(proxy_js)],
+                cwd=str(instance_dir),
+                env=penv,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
     _pid_file(instance_id).write_text(str(proc.pid))
-    _port_file(instance_id).write_text(str(port))
+    _port_file(instance_id).write_text(str(proxy_port))
     return True
 
 
