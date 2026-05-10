@@ -1,4 +1,5 @@
 const http = require('http');
+const zlib = require('zlib');
 const ST_PORT = parseInt(process.env.ST_PORT) || 8001;
 const PREFIX = process.env.ST_PATH_PREFIX || '';
 const LISTEN_PORT = parseInt(process.env.ST_PROXY_PORT) || 8000;
@@ -54,12 +55,33 @@ const server = http.createServer((req, res) => {
     }, (proxyRes) => {
         const ct = proxyRes.headers['content-type'] || '';
         if (shouldRewrite(ct)) {
-            let body = '';
-            proxyRes.on('data', chunk => body += chunk.toString());
+            const chunks = [];
+            proxyRes.on('data', chunk => chunks.push(chunk));
             proxyRes.on('end', () => {
+                let raw = Buffer.concat(chunks);
+                const h = Object.assign({}, proxyRes.headers);
+
+                // Decompress if ST sent gzip — we need plain text to rewrite paths
+                const enc = (h['content-encoding'] || '').toLowerCase();
+                if (enc === 'gzip' || enc === 'deflate' || enc === 'br') {
+                    try {
+                        raw = enc === 'gzip' ? zlib.gunzipSync(raw)
+                            : enc === 'deflate' ? zlib.inflateSync(raw)
+                            : zlib.brotliDecompressSync(raw);
+                        delete h['content-encoding'];
+                    } catch (e) {
+                        // Decompress failed — send raw, skip rewrite
+                        h['content-length'] = raw.length.toString();
+                        delete h['transfer-encoding'];
+                        res.writeHead(proxyRes.statusCode, h);
+                        res.end(raw);
+                        return;
+                    }
+                }
+
+                let body = raw.toString('utf-8');
                 body = rewriteBody(body, ct);
                 const buf = Buffer.from(body, 'utf-8');
-                const h = Object.assign({}, proxyRes.headers);
                 h['content-length'] = buf.length.toString();
                 delete h['transfer-encoding'];
                 res.writeHead(proxyRes.statusCode, h);
