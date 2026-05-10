@@ -57,15 +57,41 @@ def _get_used_ports() -> set[int]:
 
 
 def _ensure_symlink_targets(instance_dir: Path):
-    """Create shared ST app symlinks instead of copying the full codebase."""
+    """Share ST source code. Directories are symlinked; small root files are
+    copied to avoid CWD-resolution issues on Windows (Node follows symlinks)."""
     st_release = Path(os.getenv("ST_RELEASE_DIR", str(BASE_DIR / "st-release")))
     if not st_release.exists():
-        return  # No shared release, user must have copied files already
+        return
 
-    # Symlink the ST source files (read-only shared)
+    import shutil
+
+    # Files that MUST be regular files (not symlinks) so Node CWD stays correct
+    COPY_FILES = {"server.js", "package.json", "package-lock.json", "webpack.config.js",
+                  "plugins.js", "recover.js", "jsconfig.json", "index.d.ts",
+                  ".eslintrc.cjs", ".npmrc", ".editorconfig"}
+
     for item in st_release.iterdir():
         target = instance_dir / item.name
-        if not target.exists() and item.name not in ("config", "data", "plugins"):
+        if item.name in ("config", "data", "plugins"):
+            continue
+        if item.is_dir():
+            # Directories: symlink (Node can follow dir symlinks for require/static)
+            if not target.exists():
+                try:
+                    target.symlink_to(item, target_is_directory=True)
+                except OSError:
+                    pass
+        elif item.name in COPY_FILES:
+            # Must-copy: remove any stale symlink first, then copy
+            if target.is_symlink() or (target.exists() and target.stat().st_size == 0):
+                target.unlink(missing_ok=True)
+            if not target.exists():
+                try:
+                    shutil.copy2(str(item), str(target))
+                except OSError:
+                    pass
+        elif not target.exists():
+            # Other files: symlink is fine for optional files
             try:
                 target.symlink_to(item)
             except OSError:
@@ -115,13 +141,24 @@ def create_container(
     used = _get_used_ports()
     port = _next_available_port(used)
 
-    # Write port into config.yaml
+    # Write port into config.yaml (located at config/config.yaml per ST convention)
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
         content = config_yaml.read_text(encoding="utf-8")
         content = content.replace("port: 8000", f"port: {port}")
         content = content.replace("port: 8001", f"port: {port}")
         config_yaml.write_text(content, encoding="utf-8")
+
+    # ST expects config.yaml at CWD root → symlink to config/config.yaml (matches Dockerfile)
+    root_config = instance_dir / "config.yaml"
+    if root_config.is_symlink():
+        root_config.unlink()
+    if not root_config.exists():
+        try:
+            root_config.symlink_to(instance_dir / "config" / "config.yaml")
+        except OSError:
+            import shutil
+            shutil.copy2(str(config_yaml), str(root_config))
 
     env = os.environ.copy()
     env["NODE_OPTIONS"] = f"--max-old-space-size={NODE_MAX_HEAP}"
