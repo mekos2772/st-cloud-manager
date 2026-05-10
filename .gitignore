@@ -27,3 +27,5 @@ traefik
 traefik.yml
 config.yaml
 st-release/
+nginx-sites/
+.env
