@@ -23,17 +23,37 @@ set_settings({'runtime_mode': 'process'})
 print('runtime_mode set to process')
 "
 
-# Setup ST release directory (shared across instances)
+# Setup ST release directory (shared across all instances via symlinks)
+#   Each instance gets: own config/ + data/ (from templates/sillytavern/)
+#                       symlinks to st-release/ for server.js, src/, public/, node_modules/
 ST_RELEASE_DIR="${ST_RELEASE_DIR:-$(pwd)/st-release}"
 if [ ! -d "$ST_RELEASE_DIR" ]; then
-    echo "Cloning SillyTavern release to $ST_RELEASE_DIR ..."
-    git clone --depth 1 https://github.com/SillyTavern/SillyTavern.git "$ST_RELEASE_DIR" 2>/dev/null || {
-        echo "WARNING: Could not clone ST. Place ST files in $ST_RELEASE_DIR manually."
+    echo ""
+    echo "Fetching SillyTavern release (shared source)..."
+    echo "  -> git clone --depth 1 https://github.com/SillyTavern/SillyTavern.git"
+    git clone --depth 1 https://github.com/SillyTavern/SillyTavern.git "$ST_RELEASE_DIR" || {
+        echo "ERROR: Failed to clone SillyTavern."
+        echo "  Place ST files manually at: $ST_RELEASE_DIR"
+        echo "  Or set ST_RELEASE_DIR env var to an existing ST installation."
+        exit 1
     }
-    if [ -d "$ST_RELEASE_DIR" ]; then
-        cd "$ST_RELEASE_DIR" && npm install --omit=dev 2>/dev/null || true
+    echo "  -> npm install --omit=dev"
+    cd "$ST_RELEASE_DIR" && npm install --omit=dev || {
+        echo "WARNING: npm install failed. Run 'make update-st' to retry."
+    }
+else
+    echo "ST release already exists at $ST_RELEASE_DIR"
+    if [ ! -d "$ST_RELEASE_DIR/node_modules" ]; then
+        echo "  -> npm install --omit=dev (node_modules missing)"
+        cd "$ST_RELEASE_DIR" && npm install --omit=dev || true
     fi
 fi
+
+echo ""
+echo "Directory structure after setup:"
+echo "  st-release/          <- ST source (shared, ~200MB)"
+echo "  templates/sillytavern/ <- Per-instance template (config + data, ~16MB)"
+echo "  users/{id}/           <- Instance dirs (data copy + symlinks to st-release)"
 
 # Generate nginx base config
 NGINX_CONF="${NGINX_CONF_DIR:-/etc/nginx}"

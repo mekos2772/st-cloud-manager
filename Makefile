@@ -69,6 +69,20 @@ key:            ## Generate a test activation key
 nginx-reload:   ## Reload nginx config (No-Docker mode)
 	nginx -t && nginx -s reload
 
+update-st:      ## Update shared ST release (git pull + npm install)
+	@ST_DIR="$${ST_RELEASE_DIR:-$(pwd)/st-release}"; \
+	if [ -d "$$ST_DIR/.git" ]; then \
+		echo "Updating ST at $$ST_DIR..."; \
+		cd "$$ST_DIR" && git pull && npm install --omit=dev; \
+		echo "ST updated. Restart instances to apply."; \
+	else \
+		echo "ST release not found at $$ST_DIR. Run 'make setup-nodocker' first."; \
+	fi
+
+pull-images:    ## Pull latest Docker images
+	docker pull ghcr.io/sillytavern/sillytavern:latest
+	docker pull traefik:v3
+
 logs:           ## Show Manager logs (Docker mode)
 	docker compose logs -f --tail=50
 

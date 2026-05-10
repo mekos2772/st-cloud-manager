@@ -10,6 +10,11 @@ python3 scripts/init_db.py
 docker network create st_proxy 2>/dev/null || true
 mkdir -p users archive backups templates/proxy
 
+# Pull Docker images (SillyTavern + Traefik)
+echo "Pulling Docker images..."
+docker pull ghcr.io/sillytavern/sillytavern:latest 2>/dev/null || echo "  WARNING: ST image pull failed (will pull on first docker compose up)"
+docker pull traefik:v3 2>/dev/null || echo "  WARNING: Traefik pull failed"
+
 # Set runtime_mode
 python3 -c "
 from manager.db import init_db, get_db
@@ -19,4 +24,5 @@ set_settings({'runtime_mode': 'docker'})
 print('runtime_mode set to docker')
 "
 
+echo ""
 echo "Docker mode ready. Run: docker compose up -d"
