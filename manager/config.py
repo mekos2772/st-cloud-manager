@@ -61,6 +61,10 @@ DEFAULT_DAYS = int(os.getenv("ST_DEFAULT_DAYS", "30"))
 # Admin
 ADMIN_API_KEY = os.getenv("ST_ADMIN_API_KEY", "")
 
+# Local backend host (for ST to reach local models/ComfyUI etc.)
+# Docker: host.docker.internal  Process: 127.0.0.1
+LOCAL_BACKEND_HOST = os.getenv("ST_LOCAL_BACKEND_HOST", "127.0.0.1")
+
 # Trial mode
 TRIAL_ENABLED = os.getenv("ST_TRIAL_ENABLED", "false").lower() in ("true", "1", "yes")
 TRIAL_MAX_INSTANCES = int(os.getenv("ST_TRIAL_MAX_INSTANCES", "3"))

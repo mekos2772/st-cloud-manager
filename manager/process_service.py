@@ -187,7 +187,7 @@ def create_container(
         if proxy_js.exists():
             try:
                 px = subprocess.Popen(
-                    [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port)],
+                    [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port), path_prefix],
                     cwd=str(instance_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -295,7 +295,7 @@ def start_container(name: str) -> bool:
         proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
         if proxy_js.exists():
             px = subprocess.Popen(
-                [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port)],
+                [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port), path_prefix],
                 cwd=str(instance_dir),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

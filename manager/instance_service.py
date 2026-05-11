@@ -17,6 +17,7 @@ from manager.config import (
     API_BASE_URL, API_MODEL, API_HOST, MASTER_API_KEY, MANAGER_PROXY_URL,
     DEFAULT_PLAN, DEFAULT_DAYS,
     ROUTING_MODE, BASE_DOMAIN, PATH_PREFIX_LENGTH,
+    LOCAL_BACKEND_HOST,
 )
 from manager.template_service import (
     copy_template, render_config, archive_instance,
@@ -163,6 +164,7 @@ def _api_template_vars(instance_id: str, username: str, password: str, api_key: 
         "PATH_PREFIX": path_prefix,
         "ROUTING_MODE": s.get("routing_mode", ROUTING_MODE),
         "FULL_DOMAIN": _resolve_base_domain() if s.get("routing_mode") == "path" else DOMAIN_SUFFIX,
+        "LOCAL_BACKEND_HOST": LOCAL_BACKEND_HOST,
     }
 
 

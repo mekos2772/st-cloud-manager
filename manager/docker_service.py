@@ -127,20 +127,22 @@ def create_container(
 
     # Route rule differs by routing mode
     if routing_mode == "path" and path_prefix:
-        # Path-based: Host(base_domain) && PathPrefix(/st-xxx)
+        # Path-based: Host(base_domain) && PathPrefix(/st-xxx) — no stripPrefix,
+        # proxy.js inside the container handles ALL path logic.
+        instance_id = container_name.replace("st-", "")
         cmd.extend([
             "--label", f"traefik.http.routers.{container_name}.rule=Host(`{base_domain}`) && PathPrefix(`{path_prefix}`)",
             "--label", f"traefik.http.routers.{container_name}.entrypoints={entrypoint}",
             "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
-            # Middleware to strip prefix before reaching container proxy
-            "--label", f"traefik.http.middlewares.{container_name}-strip.stripprefix.prefixes={path_prefix}",
-            "--label", f"traefik.http.routers.{container_name}.middlewares={container_name}-strip",
         ])
-        # Mount proxy script and override entrypoint
+        # Mount proxy and override entrypoint — pass instanceId, ports, pathPrefix
         proxy_dir = BASE_DIR / "templates" / "proxy"
         cmd.extend([
             "-v", f"{proxy_dir}:/proxy:ro",
             "--entrypoint", "/proxy/entrypoint.sh",
+            "-e", f"ST_INSTANCE_ID={instance_id}",
+            "-e", f"ST_PROXY_PORT=8000",
+            "-e", f"ST_ST_PORT=8001",
             "-e", f"ST_PATH_PREFIX={path_prefix}",
         ])
     else:

@@ -1,17 +1,16 @@
 // ST Path Proxy — wraps SillyTavern under a path prefix
-//   node proxy.js <instanceId> <proxyPort> <stPort>
+//   node proxy.js <instanceId> <proxyPort> <stPort> [pathPrefix]
 const http = require('http');
 const zlib = require('zlib');
 
 const INSTANCE_ID = process.argv[2] || process.env.ST_INSTANCE_ID;
 const PROXY_PORT = parseInt(process.argv[3]) || parseInt(process.env.ST_PROXY_PORT) || 8000;
 const ST_PORT = parseInt(process.argv[4]) || parseInt(process.env.ST_PORT) || 8001;
+// Use explicit pathPrefix if provided, otherwise construct from instanceId
+const PREFIX = process.argv[5] || process.env.ST_PATH_PREFIX || `/st-${INSTANCE_ID}`;
+const PREFIX_SLASH = PREFIX.endsWith('/') ? PREFIX : `${PREFIX}/`;
 
-if (!INSTANCE_ID) { console.error('Usage: proxy.js <instanceId> <proxyPort> <stPort>'); process.exit(1); }
-
-const PREFIX = `/st-${INSTANCE_ID}`;
-const PREFIX_SLASH = `${PREFIX}/`;
-const ST_TARGET = `http://127.0.0.1:${ST_PORT}`;
+if (!INSTANCE_ID) { console.error('Usage: proxy.js <instanceId> <proxyPort> <stPort> [pathPrefix]'); process.exit(1); }
 
 console.log(`[proxy] ${INSTANCE_ID} :${PROXY_PORT}${PREFIX_SLASH} -> :${ST_PORT}/`);
 
@@ -28,30 +27,44 @@ function shouldRewrite(ct) {
 function rewriteBody(buf, ct) {
     let text = buf.toString('utf8');
 
-    // HTML: attribute paths + <base>
     if (ct.includes('text/html')) {
-        text = text.replace(/(\s)(src|href|content|data-src|data-href|action)=(["'])\/(?!\/)/g,
+        // All attributes that carry URLs
+        text = text.replace(/(\s)(src|href|content|data-src|data-href|action|poster|data|cite|formaction|manifest)=(["'])\/(?!\/)/g,
             `$1$2=$3${PREFIX_SLASH}`);
+        // <link rel=modulepreload href="/...">
+        // Already covered by href= above
+        // <base> injection
         if (!/<base\s/i.test(text)) {
             text = text.replace(/<head[^>]*>/i, m => m + `<base href="${PREFIX_SLASH}">`);
         }
     }
 
-    // CSS: url() references
     if (ct.includes('text/css')) {
+        // url(/...) and url("/...") and url('/...')
         text = text.replace(/url\((["']?)\/(?!\/)/g, `url($1${PREFIX_SLASH}`);
     }
 
-    // JS: string literal paths (fetch, axios, socket.io, all subdirs)
     if (ct.includes('javascript')) {
-        // Generic: "/anything/" -> "/PREFIX/anything/"
+        // String-literal paths — comprehensive regex catches:
+        // fetch("/..."), new URL("/..."), import("/..."), Worker("/..."),
+        // EventSource("/..."), SharedWorker("/..."), XMLHttpRequest("/..."),
+        // navigator.serviceWorker.register("/...")
+        // Generic pattern: a quote followed by /subdir/...
         text = text.replace(/(["'`])\/([a-zA-Z][a-zA-Z0-9._-]*\/)/g,
             `$1${PREFIX_SLASH}$2`);
-        // Root-level files: /style.css /script.js /favicon.ico etc.
+        // Root-level files
         text = text.replace(/(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
             `$1${PREFIX_SLASH}$2`);
-        // Standalone socket.io path
-        text = text.replace(/(["'`])\/socket\.io/g, `$1${PREFIX_SLASH}socket.io`);
+        // socket.io standalone (various formats)
+        text = text.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_SLASH}/socket.io`);
+        // import() with string literal
+        text = text.replace(/import\((["'`])\/(?!\/)/g, `import($1${PREFIX_SLASH}`);
+        // new Worker("/
+        text = text.replace(/new\s+(Worker|SharedWorker)\((["'`])\/(?!\/)/g,
+            `new $1($2${PREFIX_SLASH}`);
+        // navigator.serviceWorker.register("/
+        text = text.replace(/(register)\((["'`])\/(?!\/)/g,
+            `$1($2${PREFIX_SLASH}`);
     }
 
     return text;
