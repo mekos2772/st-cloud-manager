@@ -831,6 +831,11 @@ def renew_instance(instance_id: str, days: int = DEFAULT_DAYS):
                     "UPDATE instances SET api_key=?, proxy_key_alias=? WHERE instance_id=?",
                     (new_key, new_alias, instance_id),
                 )
+            # Re-render templates with new key before starting
+            instance_dir = USERS_DIR / instance_id
+            vars_ = _api_template_vars(instance_id, row["username"], row["password"],
+                                       new_key, row.get("path_prefix", ""))
+            render_config(instance_dir, vars_)
         except Exception:
             pass
 
@@ -942,7 +947,7 @@ def check_expired():
             pass
         if row["api_key"]:
             try:
-                delete_proxy_key(inst_id)
+                delete_proxy_key(row.get("proxy_key_alias", ""))
             except Exception:
                 pass
         with get_db() as conn:

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from manager.config import ADMIN_API_KEY, BASE_DIR, DOCKER_NETWORK, DOCKER_IMAGE
 from manager.db import init_db, get_db
-from manager.traefik_config_service import regenerate
+from manager.instance_service import _regenerate as regenerate
 from manager.key_service import create_keys, list_keys, disable_key, enable_key, delete_key
 from manager.instance_service import (
     create_instance, stop_instance, start_instance, restart_instance,

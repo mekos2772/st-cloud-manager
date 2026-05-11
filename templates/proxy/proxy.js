@@ -56,7 +56,7 @@ function rewriteBody(buf, ct) {
         text = text.replace(/(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
             `$1${PREFIX_SLASH}$2`);
         // socket.io standalone (various formats)
-        text = text.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_SLASH}/socket.io`);
+        text = text.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_SLASH}socket.io`);
         // import() with string literal
         text = text.replace(/import\((["'`])\/(?!\/)/g, `import($1${PREFIX_SLASH}`);
         // new Worker("/

@@ -76,22 +76,31 @@ def set_settings(updates: dict[str, str]):
 
 
 def get_effective_api_settings() -> dict:
-    """Single source of truth for API config — DB settings + env defaults.
+    """Single source of truth for API config — env vars > DB settings > hardcoded defaults.
     Used by api_test_service, api_proxy, and template rendering."""
     from manager.config import API_BASE_URL, API_MODEL, MASTER_API_KEY, MANAGER_PROXY_URL
     s = get_all_settings()
-    base = s.get("api_base_url", API_BASE_URL)
+
+    # DB value overrides _DEFAULTS but env var overrides everything
+    def _val(key: str, env_default: str, fallback: str = "") -> str:
+        db_val = s.get(key, "")
+        # If DB has the hardcoded default (never explicitly set), use env
+        if db_val == _DEFAULTS.get(key, "") or not db_val:
+            return env_default or fallback
+        return db_val
+
+    base = _val("api_base_url", API_BASE_URL)
     return {
         "api_base_url": base,
         "api_host": base.split("://")[-1].split("/")[0] if "://" in base else base,
-        "api_model": s.get("api_model", API_MODEL),
-        "upstream_api_key": s.get("upstream_api_key", "") or MASTER_API_KEY,
-        "streaming_enabled": s.get("streaming_enabled", "true"),
-        "default_temperature": s.get("default_temperature", "1.0"),
-        "default_context_size": s.get("default_context_size", "8192"),
-        "default_max_tokens": s.get("default_max_tokens", "4096"),
-        "api_mode": s.get("api_mode", "proxy"),
-        "enable_litellm": s.get("enable_litellm", "false"),
+        "api_model": _val("api_model", API_MODEL),
+        "upstream_api_key": _val("upstream_api_key", "") or MASTER_API_KEY,
+        "streaming_enabled": _val("streaming_enabled", "true"),
+        "default_temperature": _val("default_temperature", "1.0"),
+        "default_context_size": _val("default_context_size", "8192"),
+        "default_max_tokens": _val("default_max_tokens", "4096"),
+        "api_mode": _val("api_mode", "proxy"),
+        "enable_litellm": _val("enable_litellm", "false"),
         "manager_proxy_url": MANAGER_PROXY_URL,
     }
 
