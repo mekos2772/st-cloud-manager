@@ -58,45 +58,27 @@ def _get_used_ports() -> set[int]:
 
 
 def _ensure_symlink_targets(instance_dir: Path):
-    """Share ST source code. Directories are symlinked; small root files are
-    copied to avoid CWD-resolution issues on Windows (Node follows symlinks)."""
+    """Copy ST source into instance directory. No symlinks — ST's import.meta.dirname
+    follows symlinks, causing all instances to share CWD and data."""
     st_release = Path(os.getenv("ST_RELEASE_DIR", str(BASE_DIR / "st-release")))
     if not st_release.exists():
         return
 
     import shutil
 
-    # Files that MUST be regular files (not symlinks) so Node CWD stays correct
-    COPY_FILES = {"server.js", "package.json", "package-lock.json", "webpack.config.js",
-                  "plugins.js", "recover.js", "jsconfig.json", "index.d.ts",
-                  ".eslintrc.cjs", ".npmrc", ".editorconfig"}
-
     for item in st_release.iterdir():
         target = instance_dir / item.name
         if item.name in ("config", "data", "plugins"):
             continue
-        if item.is_dir():
-            # Directories: symlink (Node can follow dir symlinks for require/static)
-            if not target.exists():
-                try:
-                    target.symlink_to(item, target_is_directory=True)
-                except OSError:
-                    pass
-        elif item.name in COPY_FILES:
-            # Must-copy: remove any stale symlink first, then copy
-            if target.is_symlink() or (target.exists() and target.stat().st_size == 0):
-                target.unlink(missing_ok=True)
-            if not target.exists():
-                try:
-                    shutil.copy2(str(item), str(target))
-                except OSError:
-                    pass
-        elif not target.exists():
-            # Other files: symlink is fine for optional files
-            try:
-                target.symlink_to(item)
-            except OSError:
-                pass
+        if target.exists():
+            continue
+        try:
+            if item.is_dir():
+                shutil.copytree(str(item), str(target), symlinks=False)
+            else:
+                shutil.copy2(str(item), str(target))
+        except OSError:
+            pass
 
 
 def process_exists(instance_id: str) -> bool:
