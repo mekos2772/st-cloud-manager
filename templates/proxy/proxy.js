@@ -76,10 +76,7 @@ function rewriteBody(buf, contentType) {
 
     if (ct.includes('javascript')) {
         text = text.replace(/(["'`])\/([a-zA-Z][a-zA-Z0-9._-]*\/)/g, `$1${PREFIX_SLASH}$2`);
-        text = text.replace(
-            /(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
-            `$1${PREFIX_SLASH}$2`,
-        );
+        text = text.replace(/(["'`])\/([a-zA-Z0-9._-]+\.(?:js|mjs|css|json|txt|map|wasm|png|svg|ico))(?![a-zA-Z0-9._-])/g, `$1${PREFIX_SLASH}$2`);
         text = text.replace(/(["'`])\/socket\.io/g, `$1${PREFIX_SLASH}socket.io`);
         text = text.replace(/import\((["'`])\/(?!\/)/g, `import($1${PREFIX_SLASH}`);
         text = text.replace(/new\s+(Worker|SharedWorker)\((["'`])\/(?!\/)/g, `new $1($2${PREFIX_SLASH}`);
