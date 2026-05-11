@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import shutil
 from pathlib import Path
 
 from manager.config import PUBLIC_SCHEME, BASE_DIR
@@ -65,28 +66,40 @@ def _port_lock():
 _port_alloc_lock = _port_lock()
 
 
+def _sync_tree(src: Path, dst: Path, overwrite: bool = False):
+    """Recursively copy a release subtree into an instance directory."""
+    if src.is_dir():
+        dst.mkdir(parents=True, exist_ok=True)
+        for child in src.iterdir():
+            _sync_tree(child, dst / child.name, overwrite=overwrite)
+        return
+
+    if dst.exists() and not overwrite:
+        return
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(src), str(dst))
+
+
 def _ensure_symlink_targets(instance_dir: Path):
-    """Copy ST source into instance directory. No symlinks — ST's import.meta.dirname
-    follows symlinks, causing all instances to share CWD and data."""
+    """Copy ST source into instance directory.
+
+    Existing instances must refresh shared frontend assets from st-release/public,
+    otherwise path-mode fixes stay stuck in the first copied version forever.
+    """
     st_release = Path(os.getenv("ST_RELEASE_DIR", str(BASE_DIR / "st-release")))
     if not st_release.exists():
         return
 
-    import shutil
-
     SKIP_NAMES = {"config", "data", "plugins", "config.yaml", ".st_pid", ".st_port"}
+    ALWAYS_REFRESH = {"public"}
 
     for item in st_release.iterdir():
         target = instance_dir / item.name
         if item.name in SKIP_NAMES:
             continue
-        if target.exists():
-            continue
         try:
-            if item.is_dir():
-                shutil.copytree(str(item), str(target), symlinks=False)
-            else:
-                shutil.copy2(str(item), str(target))
+            _sync_tree(item, target, overwrite=item.name in ALWAYS_REFRESH)
         except OSError:
             pass
 
