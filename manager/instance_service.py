@@ -144,21 +144,23 @@ def _container_name(instance_id: str) -> str:
 
 def _api_template_vars(instance_id: str, username: str, password: str, api_key: str,
                        path_prefix: str = "") -> dict:
+    from manager.settings_service import get_effective_api_settings
+    api = get_effective_api_settings()
     s = get_all_settings()
     return {
         "INSTANCE_ID": instance_id,
         "USERNAME": username,
         "PASSWORD": password,
-        "API_BASE_URL": s["api_base_url"],
-        "API_MODEL": s["api_model"],
+        "API_BASE_URL": api["api_base_url"],
+        "API_MODEL": api["api_model"],
         "PROXY_API_KEY": api_key,
-        "MASTER_API_KEY": MASTER_API_KEY,
-        "MANAGER_PROXY_URL": MANAGER_PROXY_URL,
-        "API_HOST": API_HOST,
-        "STREAMING_ENABLED": s["streaming_enabled"],
-        "DEFAULT_TEMPERATURE": s["default_temperature"],
-        "DEFAULT_CONTEXT_SIZE": s["default_context_size"],
-        "DEFAULT_MAX_TOKENS": s["default_max_tokens"],
+        "MASTER_API_KEY": api["upstream_api_key"],
+        "MANAGER_PROXY_URL": api["manager_proxy_url"],
+        "API_HOST": api["api_host"],
+        "STREAMING_ENABLED": api["streaming_enabled"],
+        "DEFAULT_TEMPERATURE": api["default_temperature"],
+        "DEFAULT_CONTEXT_SIZE": api["default_context_size"],
+        "DEFAULT_MAX_TOKENS": api["default_max_tokens"],
         "BASE_DOMAIN": DOMAIN_SUFFIX,
         "PUBLIC_SCHEME": PUBLIC_SCHEME,
         "PATH_PREFIX": path_prefix,
@@ -244,7 +246,7 @@ def create_instance(activation_key: str) -> dict:
         password = _generate_password()
         container = _container_name(instance_id)
         days = key_info.get("days", DEFAULT_DAYS)
-        api_key = create_proxy_key(instance_id)
+        api_key, proxy_key_alias = create_proxy_key(instance_id)
         steps_done.append("generate instance")
 
         # copy template
@@ -328,10 +330,10 @@ def create_instance(activation_key: str) -> dict:
                 """INSERT INTO instances
                    (instance_id, domain, container_name, username, password, api_key,
                     status, ready, api_status, stream_status, web_status,
-                    cf_record_id, custom_domain, path_prefix, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, ?, ?)""",
+                    cf_record_id, custom_domain, path_prefix, proxy_key_alias, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, ?, ?, ?)""",
                 (instance_id, domain, container, username, password, api_key,
-                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, now, expires),
+                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, proxy_key_alias, now, expires),
             )
         steps_done.append("db insert")
 
@@ -458,7 +460,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         username = _generate_username()
         password = _generate_password()
         container = _container_name(instance_id)
-        api_key = create_proxy_key(instance_id)
+        api_key, proxy_key_alias = create_proxy_key(instance_id)
 
         config_dir, data_dir, plugins_dir = copy_template(instance_id)
         instance_dir = USERS_DIR / instance_id
@@ -508,10 +510,10 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
                    (instance_id, domain, container_name, username, password, api_key,
                     status, ready, api_status, stream_status, web_status,
                     cf_record_id, custom_domain, path_prefix, is_trial, last_activity, client_ip,
-                    created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, 1, ?, ?, ?, ?)""",
+                    proxy_key_alias, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, 1, ?, ?, ?, ?, ?)""",
                 (instance_id, domain, container, username, password, api_key,
-                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, now, client_ip, now, expires),
+                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, now, client_ip, proxy_key_alias, now, expires),
             )
 
         _regenerate()
@@ -728,7 +730,7 @@ def release_trial_instance(instance_id: str):
 
     if inst.get("api_key"):
         try:
-            delete_proxy_key(instance_id)
+            delete_proxy_key(inst.get("proxy_key_alias", ""))
         except Exception:
             pass
 
@@ -823,7 +825,12 @@ def renew_instance(instance_id: str, days: int = DEFAULT_DAYS):
 
     if row["api_key"]:
         try:
-            create_proxy_key(instance_id)
+            new_key, new_alias = create_proxy_key(instance_id)
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE instances SET api_key=?, proxy_key_alias=? WHERE instance_id=?",
+                    (new_key, new_alias, instance_id),
+                )
         except Exception:
             pass
 
@@ -845,7 +852,7 @@ def delete_instance(instance_id: str):
     _remove_container(container)
     if row["api_key"]:
         try:
-            delete_proxy_key(instance_id)
+            delete_proxy_key(row.get("proxy_key_alias", ""))
         except Exception:
             pass
     # Sync delete Cloudflare DNS record
@@ -998,10 +1005,13 @@ def check_instance(instance_id: str) -> dict:
 
 
 def get_instance_logs(instance_id: str, tail: int = 100) -> str:
-    import subprocess
     inst = get_instance(instance_id)
     if not inst:
         raise ValueError(f"Instance not found: {instance_id}")
+    svc = _get_runtime_svc()
+    if hasattr(svc, "get_logs"):
+        return svc.get_logs(instance_id, tail)
+    import subprocess
     result = subprocess.run(
         ["docker", "logs", inst["container_name"], "--tail", str(tail)],
         capture_output=True, text=True, timeout=10,
@@ -1010,26 +1020,34 @@ def get_instance_logs(instance_id: str, tail: int = 100) -> str:
 
 
 def get_instance_inspect(instance_id: str) -> dict:
-    import subprocess
     inst = get_instance(instance_id)
     if not inst:
         raise ValueError(f"Instance not found: {instance_id}")
 
+    user_dir = USERS_DIR / instance_id
+    svc = _get_runtime_svc()
+
     container_exists_flag = False
     container_running = False
-    try:
-        result = subprocess.run(
-            ["docker", "inspect", inst["container_name"]],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)[0]
-            container_exists_flag = True
-            container_running = data.get("State", {}).get("Running", False)
-    except Exception:
-        pass
 
-    user_dir = USERS_DIR / instance_id
+    if hasattr(svc, "inspect_container"):
+        info = svc.inspect_container(inst["container_name"])
+        container_running = info.get("running", False)
+        container_exists_flag = info.get("running", False) or user_dir.exists()
+    else:
+        import subprocess, json
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", inst["container_name"]],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)[0]
+                container_exists_flag = True
+                container_running = data.get("State", {}).get("Running", False)
+        except Exception:
+            pass
+
     return {
         "container_exists": container_exists_flag,
         "container_running": container_running,

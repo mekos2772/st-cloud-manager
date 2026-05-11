@@ -12,8 +12,8 @@ import httpx
 from fastapi import Request, HTTPException
 from fastapi.responses import StreamingResponse
 
-from manager.config import MASTER_API_KEY, API_BASE_URL
 from manager.db import get_db
+from manager.settings_service import get_effective_api_settings
 
 # Simple token bucket: {key: [timestamps]}
 _rate_windows: dict[str, list[float]] = {}
@@ -68,13 +68,14 @@ def _extract_key(request: Request) -> str:
 
 def _build_headers(request: Request) -> dict:
     """Copy request headers but swap in the real master key."""
+    upstream_key = get_effective_api_settings()["upstream_api_key"]
     headers = {}
     for key, value in request.headers.items():
         low = key.lower()
         if low in ("host", "content-length", "transfer-encoding"):
             continue
         if low == "authorization":
-            headers[key] = f"Bearer {MASTER_API_KEY}"
+            headers[key] = f"Bearer {upstream_key}"
         else:
             headers[key] = value
     return headers
@@ -100,7 +101,8 @@ async def proxy_chat_completions(request: Request):
     body = await request.body()
     headers = _build_headers(request)
 
-    gen = _stream_response("POST", f"{API_BASE_URL}/v1/chat/completions", headers, body)
+    api_base = get_effective_api_settings()["api_base_url"]
+    gen = _stream_response("POST", f"{api_base}/v1/chat/completions", headers, body)
     status_code = await gen.__anext__()
     resp_headers = await gen.__anext__()
 
@@ -127,10 +129,12 @@ async def proxy_models(request: Request):
     if not _verify_instance_key(api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+    upstream_key = get_effective_api_settings()["upstream_api_key"]
+    api_base = get_effective_api_settings()["api_base_url"]
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
-            f"{API_BASE_URL}/v1/models",
-            headers={"Authorization": f"Bearer {MASTER_API_KEY}"},
+            f"{api_base}/v1/models",
+            headers={"Authorization": f"Bearer {upstream_key}"},
         )
     # httpx auto-decompresses non-stream responses, so body is raw now.
     # Remove content-encoding from forwarded headers to match.

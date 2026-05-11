@@ -340,8 +340,7 @@ def admin_sync_domain(instance_id: str, x_api_key: str | None = Header(None)):
         raise HTTPException(status_code=400, detail="Cloudflare 未启用")
     try:
         cf = create_dns_record(instance_id)
-        import subprocess
-        subprocess.run(["docker", "restart", inst["container_name"]], capture_output=True, timeout=10)
+        restart_instance(instance_id)
         # Update DB
         with get_db() as conn:
             conn.execute(

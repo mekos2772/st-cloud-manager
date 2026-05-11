@@ -66,6 +66,7 @@ def _migrate(conn: sqlite3.Connection):
         ("is_trial", "INTEGER DEFAULT 0"),
         ("last_activity", "TEXT"),
         ("client_ip", "TEXT"),
+        ("proxy_key_alias", "TEXT"),
     ]
     for col_name, col_def in new_columns:
         if not _column_exists(conn, "instances", col_name):

@@ -311,6 +311,45 @@ def restart_container(name: str) -> bool:
     return start_container(name)
 
 
+def get_logs(instance_id: str, tail: int = 100) -> str:
+    """Unified interface — matches docker_service."""
+    instance_dir = BASE_DIR / "users" / instance_id
+    st_log = instance_dir / "st.log"
+    px_log = instance_dir / "proxy.log"
+    lines = []
+    for logfile, label in [(st_log, "ST"), (px_log, "PROXY")]:
+        if logfile.exists():
+            try:
+                content = logfile.read_text(errors="replace")
+                recent = content.split("\n")[-tail:]
+                lines.append(f"--- {label} ---")
+                lines.extend(recent)
+            except (OSError, IOError):
+                pass
+    return "\n".join(lines) if lines else "(no logs)"
+
+
+def inspect_container(name: str) -> dict:
+    """Unified interface — matches docker_service."""
+    instance_id = name.replace("st-", "")
+    instance_dir = BASE_DIR / "users" / instance_id
+    return {
+        "container_name": name,
+        "running": process_exists(instance_id),
+        "instance_dir": str(instance_dir),
+        "config_yaml_exists": (instance_dir / "config" / "config.yaml").exists(),
+        "pid_file_exists": _pid_file(instance_id).exists(),
+        "proxy_pid_file_exists": (instance_dir / ".st_proxy_pid").exists(),
+        "port_file_exists": _port_file(instance_id).exists(),
+    }
+
+
+def restart_container(name: str) -> bool:
+    """Unified interface — matches docker_service."""
+    stop_container(name)
+    time.sleep(0.5)
+    return start_container(name)
+
 def remove_container(name: str) -> bool:
     return stop_container(name)
 

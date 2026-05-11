@@ -3,29 +3,32 @@ import json
 import urllib.request
 import urllib.error
 
-from manager.settings_service import get_all_settings
+from manager.settings_service import get_effective_api_settings
+
+
+def _settings():
+    return get_effective_api_settings()
 
 
 def _api_url() -> str:
-    s = get_all_settings()
-    base = s["api_base_url"].rstrip("/")
+    base = _settings()["api_base_url"].rstrip("/")
     if not base.endswith("/v1"):
         base += "/v1"
     return f"{base}/chat/completions"
 
 
 def _headers() -> dict:
-    s = get_all_settings()
     return {
-        "Authorization": f"Bearer {s['upstream_api_key']}",
+        "Authorization": f"Bearer {_settings()['upstream_api_key']}",
         "Content-Type": "application/json",
     }
 
 
 def test_connection() -> dict:
     """Non-streaming chat completions test."""
+    s = _settings()
     body = json.dumps({
-        "model": get_all_settings()["api_model"],
+        "model": s["api_model"],
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 20,
         "stream": False,
@@ -48,8 +51,9 @@ def test_connection() -> dict:
 
 def test_stream() -> dict:
     """Streaming chat completions test."""
+    s = _settings()
     body = json.dumps({
-        "model": get_all_settings()["api_model"],
+        "model": s["api_model"],
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 20,
         "stream": True,
