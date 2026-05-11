@@ -141,6 +141,10 @@ def create_container(
         if use_proxy:
             proxy_port = st_port
             st_port = _next_available_port(used)
+            used.add(st_port)
+
+        # Write port file IMMEDIATELY so concurrent allocations see it
+        _port_file(instance_id).write_text(str(proxy_port))
 
     # Write ST's internal port into config.yaml
     config_yaml = instance_dir / "config" / "config.yaml"
@@ -196,7 +200,6 @@ def create_container(
             print(f"[WARN] proxy.js not found at {proxy_js}, path rewriting disabled", file=sys.stderr)
 
     _pid_file(instance_id).write_text(str(st_proc.pid))
-    _port_file(instance_id).write_text(str(proxy_port))
     return True
 
 
@@ -263,6 +266,8 @@ def start_container(name: str) -> bool:
             used = _get_used_ports()
             used.add(proxy_port)
             st_port = _next_available_port(used)
+            used.add(st_port)
+            _port_file(instance_id).write_text(str(proxy_port))
 
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
@@ -299,10 +304,7 @@ def start_container(name: str) -> bool:
             (instance_dir / ".st_proxy_pid").write_text(str(px.pid))
 
     _pid_file(instance_id).write_text(str(proc.pid))
-    _port_file(instance_id).write_text(str(proxy_port))
     return True
-
-
 def restart_container(name: str) -> bool:
     stop_container(name)
     time.sleep(0.5)
