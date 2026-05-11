@@ -29,3 +29,5 @@ config.yaml
 st-release/
 nginx-sites/
 .env
+nginx-test.conf
+st-release2/
