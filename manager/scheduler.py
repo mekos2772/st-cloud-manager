@@ -1,5 +1,5 @@
 import time
-from manager.instance_service import check_expired, check_trial_idle, process_trial_queue
+from manager.instance_service import check_expired, check_trial_idle, process_trial_queue, check_crashed
 
 INTERVAL_SECONDS = 60
 QUEUE_INTERVAL_SECONDS = 30
@@ -19,6 +19,11 @@ def run_scheduler():
             idle_count = check_trial_idle()
             if idle_count > 0:
                 print(f"[scheduler] released {idle_count} idle trial instance(s)")
+
+            # Crash detection & auto-restart
+            restarted = check_crashed()
+            if restarted > 0:
+                print(f"[scheduler] restarted {restarted} crashed instance(s)")
 
             # Trial queue processing (check every QUEUE_INTERVAL_SECONDS)
             now = time.time()

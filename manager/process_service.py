@@ -57,6 +57,14 @@ def _get_used_ports() -> set[int]:
     return used
 
 
+def _port_lock():
+    """Deduplicate port allocation across concurrent create requests."""
+    import threading
+    return threading.Lock()
+
+_port_alloc_lock = _port_lock()
+
+
 def _ensure_symlink_targets(instance_dir: Path):
     """Copy ST source into instance directory. No symlinks — ST's import.meta.dirname
     follows symlinks, causing all instances to share CWD and data."""
@@ -120,16 +128,17 @@ def create_container(
 
     _ensure_symlink_targets(instance_dir)
 
-    used = _get_used_ports()
-    st_port = _next_available_port(used)
-    used.add(st_port)
-
-    # Path mode: need a proxy to rewrite absolute URLs in ST responses
-    use_proxy = bool(path_prefix)
-    proxy_port = st_port
-    if use_proxy:
-        proxy_port = st_port
+    with _port_alloc_lock:
+        used = _get_used_ports()
         st_port = _next_available_port(used)
+        used.add(st_port)
+
+        # Path mode: need a proxy to rewrite absolute URLs in ST responses
+        use_proxy = bool(path_prefix)
+        proxy_port = st_port
+        if use_proxy:
+            proxy_port = st_port
+            st_port = _next_available_port(used)
 
     # Write ST's internal port into config.yaml
     config_yaml = instance_dir / "config" / "config.yaml"
@@ -233,15 +242,17 @@ def start_container(name: str) -> bool:
     if pf.exists():
         proxy_port = int(pf.read_text().strip())
     else:
-        used = _get_used_ports()
-        proxy_port = _next_available_port(used)
+        with _port_alloc_lock:
+            used = _get_used_ports()
+            proxy_port = _next_available_port(used)
 
     use_proxy = bool(path_prefix)
     st_port = proxy_port
     if use_proxy:
-        used = _get_used_ports()
-        used.add(proxy_port)
-        st_port = _next_available_port(used)
+        with _port_alloc_lock:
+            used = _get_used_ports()
+            used.add(proxy_port)
+            st_port = _next_available_port(used)
 
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():

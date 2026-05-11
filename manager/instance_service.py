@@ -667,6 +667,30 @@ def _is_instance_idle(inst: dict, idle_timeout: int, now) -> bool:
     return True
 
 
+def check_crashed() -> int:
+    """Auto-restart running instances whose process has died. Returns count restarted."""
+    restarted = 0
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT instance_id, container_name FROM instances WHERE status='running'"
+        ).fetchall()
+
+    for row in rows:
+        inst = dict(row)
+        cid = inst["container_name"]
+        try:
+            svc = _get_runtime_svc()
+            if hasattr(svc, 'process_exists'):
+                if not svc.process_exists(inst["instance_id"]):
+                    print(f"[scheduler] instance {inst['instance_id']} process dead, restarting...")
+                    _start_container(cid)
+                    restarted += 1
+        except Exception:
+            pass
+
+    return restarted
+
+
 def _latest_mtime(directory: Path) -> float | None:
     """Get the most recent mtime in directory, skipping caches and temp files."""
     max_mtime = 0.0
