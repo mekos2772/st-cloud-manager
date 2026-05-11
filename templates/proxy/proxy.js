@@ -1,101 +1,116 @@
+// ST Path Proxy — wraps SillyTavern under a path prefix
+//   node proxy.js <instanceId> <proxyPort> <stPort>
 const http = require('http');
 const zlib = require('zlib');
-const ST_PORT = parseInt(process.env.ST_PORT) || 8001;
-const LISTEN_PORT = parseInt(process.env.ST_PROXY_PORT) || 8000;
 
-let raw = process.env.ST_PATH_PREFIX || '';
-// MSYS2/Git Bash mangles Unix paths to Windows paths (e.g. /st-xxx -> C:/Program Files/Git/st-xxx)
-// Extract the suffix after the last colon-slash or drive letter
-if (raw.includes(':\\') || raw.includes(':/')) {
-    const m = raw.match(/[a-zA-Z]:[\\\/].*?(\/st-[a-z0-9]+)$/i);
-    if (m) raw = m[1];
-    else raw = '/' + raw.replace(/^.*[\\\/]/, '');
-}
-const PREFIX = raw;
-if (!PREFIX || !PREFIX.startsWith('/')) {
-    console.error('[proxy] ST_PATH_PREFIX must start with /, got:', process.env.ST_PATH_PREFIX);
-    process.exit(1);
-}
+const INSTANCE_ID = process.argv[2] || process.env.ST_INSTANCE_ID;
+const PROXY_PORT = parseInt(process.argv[3]) || parseInt(process.env.ST_PROXY_PORT) || 8000;
+const ST_PORT = parseInt(process.argv[4]) || parseInt(process.env.ST_PORT) || 8001;
 
-const PREFIX_NO_TRAILING = PREFIX.replace(/\/$/, '');
-const PREFIX_WITH_TRAILING = PREFIX_NO_TRAILING + '/';
+if (!INSTANCE_ID) { console.error('Usage: proxy.js <instanceId> <proxyPort> <stPort>'); process.exit(1); }
 
-const REWRITE_TYPES = ['text/html', 'text/css', 'application/javascript',
+const PREFIX = `/st-${INSTANCE_ID}`;
+const PREFIX_SLASH = `${PREFIX}/`;
+const ST_TARGET = `http://127.0.0.1:${ST_PORT}`;
+
+console.log(`[proxy] ${INSTANCE_ID} :${PROXY_PORT}${PREFIX_SLASH} -> :${ST_PORT}/`);
+
+// ── Response body rewriting ──────────────────────────────────────
+
+const REWRITE_CT = ['text/html', 'text/css', 'application/javascript',
     'application/x-javascript', 'text/javascript'];
 
 function shouldRewrite(ct) {
     if (!ct) return false;
-    return REWRITE_TYPES.some(t => ct.includes(t));
+    return REWRITE_CT.some(t => ct.includes(t));
 }
 
-function rewriteBody(body, contentType) {
-    let r = body;
-    if (contentType.includes('text/html')) {
-        // Rewrite absolute paths in attributes
-        r = r.replace(/(\s)(src|href|content|data-src|data-href)=(["'])\/(?!\/)/g,
-            `$1$2=$3${PREFIX_WITH_TRAILING}`);
-        // Inject <base> tag (use relative path to avoid MSYS2 path mangling)
-        if (!/<base\s/i.test(r)) {
-            const relBase = PREFIX_NO_TRAILING.replace(/^\/+/, '') + '/';
-            r = r.replace(/<head[^>]*>/i, match => match + `<base href="/${relBase}">`);
+function rewriteBody(buf, ct) {
+    let text = buf.toString('utf8');
+
+    // HTML: attribute paths + <base>
+    if (ct.includes('text/html')) {
+        text = text.replace(/(\s)(src|href|content|data-src|data-href|action)=(["'])\/(?!\/)/g,
+            `$1$2=$3${PREFIX_SLASH}`);
+        if (!/<base\s/i.test(text)) {
+            text = text.replace(/<head[^>]*>/i, m => m + `<base href="${PREFIX_SLASH}">`);
         }
     }
-    if (contentType.includes('text/css')) {
-        r = r.replace(/url\((["']?)\/(?!\/)/g, `url($1${PREFIX_WITH_TRAILING}`);
+
+    // CSS: url() references
+    if (ct.includes('text/css')) {
+        text = text.replace(/url\((["']?)\/(?!\/)/g, `url($1${PREFIX_SLASH}`);
     }
-    if (contentType.includes('javascript')) {
-        // Root-level assets (ST 1.18 style): /style.css /script.js /favicon.ico etc.
-        r = r.replace(/(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
-            `$1${PREFIX_WITH_TRAILING}$2`);
-        // Subdirectory paths
-        r = r.replace(/(["'`])\/(api|scripts|css|fonts|images|themes|webfonts|backgrounds|img|assets|thumbnail|thumbnails|backups|modifiers|objects|sprites|sounds|socket\.io|characters|vectors|user|extensions|locales|lib)\//g,
-            `$1${PREFIX_WITH_TRAILING}$2/`);
-        // Socket.IO standalone
-        r = r.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_WITH_TRAILING}/socket.io`);
+
+    // JS: string literal paths (fetch, axios, socket.io, all subdirs)
+    if (ct.includes('javascript')) {
+        // Generic: "/anything/" -> "/PREFIX/anything/"
+        text = text.replace(/(["'`])\/([a-zA-Z][a-zA-Z0-9._-]*\/)/g,
+            `$1${PREFIX_SLASH}$2`);
+        // Root-level files: /style.css /script.js /favicon.ico etc.
+        text = text.replace(/(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
+            `$1${PREFIX_SLASH}$2`);
+        // Standalone socket.io path
+        text = text.replace(/(["'`])\/socket\.io/g, `$1${PREFIX_SLASH}socket.io`);
     }
-    return r;
+
+    return text;
 }
 
+// ── HTTP server ─────────────────────────────────────────────────
+
 const server = http.createServer((req, res) => {
-    // Traefik already stripped the prefix — proxy passes through to ST directly
+    // Redirect /st-xxx (no slash) → /st-xxx/
+    if (req.url === PREFIX) {
+        res.writeHead(301, { 'Location': PREFIX_SLASH });
+        res.end();
+        return;
+    }
+
+    // Must be under our prefix
+    if (!req.url.startsWith(PREFIX_SLASH)) {
+        res.writeHead(404);
+        res.end('Not Found');
+        return;
+    }
+
+    // Strip prefix for ST
+    const stPath = req.url.slice(PREFIX.length) || '/';
+
     const proxyReq = http.request({
         hostname: '127.0.0.1',
         port: ST_PORT,
-        path: req.url,
+        path: stPath,
         method: req.method,
         headers: req.headers,
     }, (proxyRes) => {
         const ct = proxyRes.headers['content-type'] || '';
+
+        // Rewrite Location header
+        if (proxyRes.headers['location'] && proxyRes.headers['location'].startsWith('/')) {
+            proxyRes.headers['location'] = PREFIX + proxyRes.headers['location'];
+        }
+
         if (shouldRewrite(ct)) {
+            // Decompress if needed, rewrite, send uncompressed
             const chunks = [];
-            proxyRes.on('data', chunk => chunks.push(chunk));
+            proxyRes.on('data', c => chunks.push(c));
             proxyRes.on('end', () => {
                 let raw = Buffer.concat(chunks);
-                const h = Object.assign({}, proxyRes.headers);
-
-                // Decompress if ST sent gzip — we need plain text to rewrite paths
-                const enc = (h['content-encoding'] || '').toLowerCase();
+                const enc = (proxyRes.headers['content-encoding'] || '').toLowerCase();
                 if (enc === 'gzip' || enc === 'deflate' || enc === 'br') {
                     try {
                         raw = enc === 'gzip' ? zlib.gunzipSync(raw)
                             : enc === 'deflate' ? zlib.inflateSync(raw)
                             : zlib.brotliDecompressSync(raw);
-                        delete h['content-encoding'];
-                    } catch (e) {
-                        // Decompress failed — send raw, skip rewrite
-                        h['content-length'] = raw.length.toString();
-                        delete h['transfer-encoding'];
-                        res.writeHead(proxyRes.statusCode, h);
-                        res.end(raw);
-                        return;
-                    }
+                    } catch (e) { /* pass through */ }
                 }
-
-                let body = raw.toString('utf-8');
-                body = rewriteBody(body, ct);
-                const buf = Buffer.from(body, 'utf-8');
-                h['content-length'] = buf.length.toString();
+                const body = rewriteBody(raw, ct);
+                const buf = Buffer.from(body, 'utf8');
+                const h = Object.assign({}, proxyRes.headers);
+                delete h['content-encoding'];
                 delete h['transfer-encoding'];
+                h['content-length'] = buf.length.toString();
                 res.writeHead(proxyRes.statusCode, h);
                 res.end(buf);
             });
@@ -104,30 +119,36 @@ const server = http.createServer((req, res) => {
             proxyRes.pipe(res);
         }
     });
-    proxyReq.on('error', () => { res.writeHead(502); res.end('Proxy Error'); });
+
+    proxyReq.on('error', () => { res.writeHead(502); res.end('Bad Gateway'); });
     req.pipe(proxyReq);
 });
 
+// WebSocket upgrade
 server.on('upgrade', (req, socket, head) => {
+    let stPath = req.url;
+    if (stPath.startsWith(PREFIX)) stPath = stPath.slice(PREFIX.length) || '/';
+
     const proxyReq = http.request({
         hostname: '127.0.0.1',
         port: ST_PORT,
-        path: req.url,
+        path: stPath,
         method: req.method,
         headers: req.headers,
     });
+
     proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-        proxySocket.write(head);
         socket.write('HTTP/1.1 101 Switching Protocols\r\n' +
             Object.keys(proxyRes.headers).map(k => `${k}: ${proxyRes.headers[k]}`).join('\r\n') +
             '\r\n\r\n');
         proxySocket.pipe(socket);
         socket.pipe(proxySocket);
     });
+
     proxyReq.on('error', () => socket.destroy());
     proxyReq.end();
 });
 
-server.listen(LISTEN_PORT, () => {
-    console.log(`[proxy] :${LISTEN_PORT} -> :${ST_PORT}, prefix=${PREFIX}`);
+server.listen(PROXY_PORT, '127.0.0.1', () => {
+    console.log(`[proxy] running on :${PROXY_PORT}`);
 });

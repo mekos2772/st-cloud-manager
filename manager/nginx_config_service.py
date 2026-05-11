@@ -86,7 +86,7 @@ def _render_path(inst: dict) -> str:
     lines.append("    }")
     lines.append("")
     lines.append(f"    location {path_prefix}/ {{")
-    lines.append("        proxy_pass http://127.0.0.1:$st_port/;")
+    lines.append("        proxy_pass http://127.0.0.1:$st_port;")
     lines.append("        proxy_http_version 1.1;")
     lines.append('        proxy_set_header Upgrade $http_upgrade;')
     lines.append('        proxy_set_header Connection "upgrade";')

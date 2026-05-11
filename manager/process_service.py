@@ -188,21 +188,16 @@ def create_container(
     if use_proxy:
         proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
         if proxy_js.exists():
-            penv = env.copy()
-            penv["ST_PATH_PREFIX"] = path_prefix
-            penv["ST_PORT"] = str(st_port)
             try:
                 subprocess.Popen(
-                    [NODE_BIN, str(proxy_js)],
+                    [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port)],
                     cwd=str(instance_dir),
-                    env=penv,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
             except Exception as e:
                 print(f"[ERROR] Failed to start proxy: {e}", file=sys.stderr)
-                # Proxy failed but ST is running — continue without rewrite
         else:
             print(f"[WARN] proxy.js not found at {proxy_js}, path rewriting disabled", file=sys.stderr)
 
