@@ -74,9 +74,11 @@ def _ensure_symlink_targets(instance_dir: Path):
 
     import shutil
 
+    SKIP_NAMES = {"config", "data", "plugins", "config.yaml", ".st_pid", ".st_port"}
+
     for item in st_release.iterdir():
         target = instance_dir / item.name
-        if item.name in ("config", "data", "plugins"):
+        if item.name in SKIP_NAMES:
             continue
         if target.exists():
             continue
@@ -230,7 +232,7 @@ def start_container(name: str) -> bool:
     path_prefix = ""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT path_prefix FROM instances WHERE instance_id=? AND status='running'",
+            "SELECT path_prefix FROM instances WHERE instance_id=?",
             (instance_id,),
         ).fetchone()
     if row and row["path_prefix"]:
