@@ -4,6 +4,7 @@ Each ST instance runs as a Node.js child process on a unique port.
 Nginx handles reverse-proxy routing. Processes are tracked via PID files.
 """
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -152,8 +153,7 @@ def create_container(
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
         content = config_yaml.read_text(encoding="utf-8")
-        content = content.replace("port: 8000", f"port: {st_port}")
-        content = content.replace("port: 8001", f"port: {st_port}")
+        content = re.sub(r'^port:\s*\d+', f'port: {st_port}', content, flags=re.MULTILINE)
         config_yaml.write_text(content, encoding="utf-8")
 
     # config.yaml symlink (matches ST Dockerfile convention)
@@ -269,8 +269,7 @@ def start_container(name: str) -> bool:
     config_yaml = instance_dir / "config" / "config.yaml"
     if config_yaml.exists():
         content = config_yaml.read_text(encoding="utf-8")
-        content = content.replace("port: 8000", f"port: {st_port}")
-        content = content.replace("port: 8001", f"port: {st_port}")
+        content = re.sub(r'^port:\s*\d+', f'port: {st_port}', content, flags=re.MULTILINE)
         config_yaml.write_text(content, encoding="utf-8")
 
     env = os.environ.copy()
