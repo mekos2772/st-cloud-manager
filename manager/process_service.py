@@ -182,13 +182,14 @@ def create_container(
         proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
         if proxy_js.exists():
             try:
-                subprocess.Popen(
+                px = subprocess.Popen(
                     [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port)],
                     cwd=str(instance_dir),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
+                (instance_dir / ".st_proxy_pid").write_text(str(px.pid))
             except Exception as e:
                 print(f"[ERROR] Failed to start proxy: {e}", file=sys.stderr)
         else:
@@ -199,25 +200,32 @@ def create_container(
     return True
 
 
-def stop_container(name: str) -> bool:
-    instance_id = name.replace("st-", "")
-    pf = _pid_file(instance_id)
+def _kill_pid_file(pf: Path):
     if not pf.exists():
-        return True  # already stopped
+        return
     try:
         pid = int(pf.read_text().strip())
         os.kill(pid, signal.SIGTERM)
-        time.sleep(1)
+        time.sleep(0.5)
         try:
             os.kill(pid, 0)
             os.kill(pid, signal.SIGKILL)
         except (OSError, ProcessLookupError):
             pass
-        pf.unlink(missing_ok=True)
-        return True
     except (ValueError, OSError, ProcessLookupError):
+        pass
+    finally:
         pf.unlink(missing_ok=True)
-        return True
+
+
+def stop_container(name: str) -> bool:
+    instance_id = name.replace("st-", "")
+    instance_dir = BASE_DIR / "users" / instance_id
+
+    # Kill proxy first (so no new requests reach ST), then ST
+    _kill_pid_file(instance_dir / ".st_proxy_pid")
+    _kill_pid_file(_pid_file(instance_id))
+    return True
 
 
 def start_container(name: str) -> bool:
@@ -281,17 +289,14 @@ def start_container(name: str) -> bool:
     if use_proxy:
         proxy_js = BASE_DIR / "templates" / "proxy" / "proxy.js"
         if proxy_js.exists():
-            penv = env.copy()
-            penv["ST_PATH_PREFIX"] = path_prefix
-            penv["ST_PORT"] = str(st_port)
-            subprocess.Popen(
-                [NODE_BIN, str(proxy_js)],
+            px = subprocess.Popen(
+                [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port)],
                 cwd=str(instance_dir),
-                env=penv,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            (instance_dir / ".st_proxy_pid").write_text(str(px.pid))
 
     _pid_file(instance_id).write_text(str(proc.pid))
     _port_file(instance_id).write_text(str(proxy_port))
