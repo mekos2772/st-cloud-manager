@@ -1,11 +1,19 @@
 const http = require('http');
 const zlib = require('zlib');
 const ST_PORT = parseInt(process.env.ST_PORT) || 8001;
-const PREFIX = process.env.ST_PATH_PREFIX || '';
 const LISTEN_PORT = parseInt(process.env.ST_PROXY_PORT) || 8000;
 
-if (!PREFIX) {
-    console.error('[proxy] ST_PATH_PREFIX env var is required');
+let raw = process.env.ST_PATH_PREFIX || '';
+// MSYS2/Git Bash mangles Unix paths to Windows paths (e.g. /st-xxx -> C:/Program Files/Git/st-xxx)
+// Extract the suffix after the last colon-slash or drive letter
+if (raw.includes(':\\') || raw.includes(':/')) {
+    const m = raw.match(/[a-zA-Z]:[\\\/].*?(\/st-[a-z0-9]+)$/i);
+    if (m) raw = m[1];
+    else raw = '/' + raw.replace(/^.*[\\\/]/, '');
+}
+const PREFIX = raw;
+if (!PREFIX || !PREFIX.startsWith('/')) {
+    console.error('[proxy] ST_PATH_PREFIX must start with /, got:', process.env.ST_PATH_PREFIX);
     process.exit(1);
 }
 
@@ -26,19 +34,23 @@ function rewriteBody(body, contentType) {
         // Rewrite absolute paths in attributes
         r = r.replace(/(\s)(src|href|content|data-src|data-href)=(["'])\/(?!\/)/g,
             `$1$2=$3${PREFIX_WITH_TRAILING}`);
-        // Inject <base> tag for relative URLs
+        // Inject <base> tag (use relative path to avoid MSYS2 path mangling)
         if (!/<base\s/i.test(r)) {
-            r = r.replace(/<head[^>]*>/i, match => match + `<base href="${PREFIX_WITH_TRAILING}">`);
+            const relBase = PREFIX_NO_TRAILING.replace(/^\/+/, '') + '/';
+            r = r.replace(/<head[^>]*>/i, match => match + `<base href="/${relBase}">`);
         }
     }
     if (contentType.includes('text/css')) {
         r = r.replace(/url\((["']?)\/(?!\/)/g, `url($1${PREFIX_WITH_TRAILING}`);
     }
     if (contentType.includes('javascript')) {
-        r = r.replace(/(["'`])\/(api|scripts|css|fonts|images|themes|webfonts|backgrounds|img|assets|thumbnail|thumbnails|backups|modifiers|objects|sprites|sounds|socket\.io|characters|vectors|user|themes|extensions)\//g,
+        // Root-level assets (ST 1.18 style): /style.css /script.js /favicon.ico etc.
+        r = r.replace(/(["'`])\/(style\.css|script\.js|favicon\.ico|manifest\.json|robots\.txt|login\.html)/g,
+            `$1${PREFIX_WITH_TRAILING}$2`);
+        // Subdirectory paths
+        r = r.replace(/(["'`])\/(api|scripts|css|fonts|images|themes|webfonts|backgrounds|img|assets|thumbnail|thumbnails|backups|modifiers|objects|sprites|sounds|socket\.io|characters|vectors|user|extensions|locales|lib)\//g,
             `$1${PREFIX_WITH_TRAILING}$2/`);
-        r = r.replace(/(["'`])\/(favicon\.)/g, `$1${PREFIX_WITH_TRAILING}$2`);
-        // Socket.IO standalone path
+        // Socket.IO standalone
         r = r.replace(/(["'`])(\/socket\.io)/g, `$1${PREFIX_WITH_TRAILING}/socket.io`);
     }
     return r;
