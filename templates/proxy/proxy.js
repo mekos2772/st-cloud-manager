@@ -111,6 +111,8 @@ const server = http.createServer((req, res) => {
                 delete h['content-encoding'];
                 delete h['transfer-encoding'];
                 h['content-length'] = buf.length.toString();
+                // Prevent CDN caching of auth-gated responses
+                h['cache-control'] = 'private, no-cache';
                 res.writeHead(proxyRes.statusCode, h);
                 res.end(buf);
             });
