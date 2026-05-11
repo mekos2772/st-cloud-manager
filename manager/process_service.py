@@ -173,8 +173,8 @@ def create_container(
             [NODE_BIN, "server.js"],
             cwd=str(instance_dir),
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=open(instance_dir / "st.log", "a"),
+            stderr=subprocess.STDOUT,
             start_new_session=True,
         )
     except Exception as e:
@@ -189,8 +189,8 @@ def create_container(
                 px = subprocess.Popen(
                     [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port), path_prefix],
                     cwd=str(instance_dir),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=open(instance_dir / "proxy.log", "a"),
+                    stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
                 (instance_dir / ".st_proxy_pid").write_text(str(px.pid))
@@ -283,8 +283,8 @@ def start_container(name: str) -> bool:
             [NODE_BIN, "server.js"],
             cwd=str(instance_dir),
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=open(instance_dir / "st.log", "a"),
+            stderr=subprocess.STDOUT,
             start_new_session=True,
         )
     except Exception as e:
@@ -297,8 +297,8 @@ def start_container(name: str) -> bool:
             px = subprocess.Popen(
                 [NODE_BIN, str(proxy_js), instance_id, str(proxy_port), str(st_port), path_prefix],
                 cwd=str(instance_dir),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=open(instance_dir / "proxy.log", "a"),
+                stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
             (instance_dir / ".st_proxy_pid").write_text(str(px.pid))

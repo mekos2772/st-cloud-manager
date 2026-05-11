@@ -365,6 +365,16 @@ def create_instance(activation_key: str) -> dict:
         raise
     except Exception as e:
         if instance_id:
+            # Clean up external resources to prevent leaks
+            if cf_record_id:
+                try:
+                    delete_dns_record(cf_record_id)
+                except Exception:
+                    pass
+            try:
+                delete_proxy_key(proxy_key_alias)
+            except Exception:
+                pass
             _rollback(instance_id, container or _container_name(instance_id))
         raise RuntimeError(f"create failed at '{steps_done[-1] if steps_done else 'init'}': {e}")
 
@@ -532,6 +542,11 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         raise
     except Exception as e:
         if instance_id:
+            if cf_record_id:
+                try: delete_dns_record(cf_record_id)
+                except Exception: pass
+            try: delete_proxy_key(proxy_key_alias)
+            except Exception: pass
             _rollback(instance_id, container or _container_name(instance_id))
         raise RuntimeError(f"Trial create failed: {e}")
 
