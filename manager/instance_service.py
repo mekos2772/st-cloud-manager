@@ -116,6 +116,14 @@ def _generate_path_prefix(instance_id: str) -> str:
     return f"/st-{instance_id}{extra}"
 
 
+def _access_url(domain: str, path_prefix: str = "") -> str:
+    """Build the browser-facing URL for an instance."""
+    url = f"{PUBLIC_SCHEME}://{domain}"
+    if path_prefix and domain.endswith(path_prefix) and not url.endswith("/"):
+        return url + "/"
+    return url
+
+
 def _resolve_routing_mode() -> str:
     """Resolve routing mode from settings (env or DB)."""
     s = get_all_settings()
@@ -318,7 +326,7 @@ def create_instance(activation_key: str) -> dict:
         stream_ok = True
         stream_error = None
 
-        url = f"{PUBLIC_SCHEME}://{domain}"
+        url = _access_url(domain, path_prefix)
         steps_done.append("api test")
         steps_done.append("stream test")
 
@@ -509,7 +517,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
 
         _start_container(container)
         ready = _health_check_container(domain, timeout=60)
-        url = f"{PUBLIC_SCHEME}://{domain}"
+        url = _access_url(domain, path_prefix)
 
         now = datetime.now(timezone.utc).isoformat()
         expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
@@ -911,7 +919,12 @@ def list_instances(status: str | None = None) -> list[dict]:
             rows = conn.execute(
                 "SELECT * FROM instances ORDER BY created_at DESC"
             ).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        inst = dict(r)
+        inst["url"] = _access_url(inst["domain"], inst.get("path_prefix", ""))
+        result.append(inst)
+    return result
 
 
 def apply_api_config(instance_id: str) -> dict:
@@ -1072,7 +1085,7 @@ def get_instance_inspect(instance_id: str) -> dict:
         "container_exists": container_exists_flag,
         "container_running": container_running,
         "domain": inst["domain"],
-        "url": f"{PUBLIC_SCHEME}://{inst['domain']}",
+        "url": _access_url(inst["domain"], inst.get("path_prefix", "")),
         "user_dir_exists": user_dir.exists(),
         "config_yaml_exists": (user_dir / "config" / "config.yaml").exists(),
         "default_user_exists": (user_dir / "data" / "default-user").exists(),
