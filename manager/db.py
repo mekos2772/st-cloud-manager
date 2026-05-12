@@ -37,6 +37,76 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(r["name"] == column for r in rows)
 
 
+def _instances_domain_is_unique(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='instances'"
+    ).fetchone()
+    sql = (row["sql"] or "").lower() if row else ""
+    return "domain text unique not null" in sql
+
+
+def _rebuild_instances_without_domain_unique(conn: sqlite3.Connection):
+    """Path routing needs many rows to share one host/domain."""
+    if not _table_exists(conn, "instances") or not _instances_domain_is_unique(conn):
+        return
+
+    conn.execute("ALTER TABLE instances RENAME TO instances_old")
+    conn.execute("""
+        CREATE TABLE instances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instance_id TEXT UNIQUE NOT NULL,
+            domain TEXT NOT NULL,
+            container_name TEXT UNIQUE NOT NULL,
+            username TEXT NOT NULL,
+            password TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running',
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            api_status TEXT DEFAULT 'unchecked',
+            api_error TEXT,
+            api_checked_at TEXT,
+            stream_status TEXT DEFAULT 'unchecked',
+            stream_error TEXT,
+            stream_checked_at TEXT,
+            web_status TEXT DEFAULT 'unchecked',
+            web_error TEXT,
+            web_checked_at TEXT,
+            ready INTEGER DEFAULT 0,
+            cf_record_id TEXT,
+            custom_domain TEXT,
+            path_prefix TEXT,
+            is_trial INTEGER DEFAULT 0,
+            last_activity TEXT,
+            client_ip TEXT,
+            proxy_key_alias TEXT
+        );
+    """)
+
+    old_cols = {r["name"] for r in conn.execute("PRAGMA table_info(instances_old)").fetchall()}
+    new_cols = [r["name"] for r in conn.execute("PRAGMA table_info(instances)").fetchall()]
+    cols = [c for c in new_cols if c in old_cols]
+    col_sql = ", ".join(cols)
+    conn.execute(f"INSERT INTO instances ({col_sql}) SELECT {col_sql} FROM instances_old")
+    conn.execute("DROP TABLE instances_old")
+
+
+def _normalize_path_domains(conn: sqlite3.Connection):
+    if not _table_exists(conn, "instances") or not _column_exists(conn, "instances", "path_prefix"):
+        return
+    rows = conn.execute(
+        "SELECT id, domain, path_prefix FROM instances WHERE path_prefix IS NOT NULL AND path_prefix != ''"
+    ).fetchall()
+    for row in rows:
+        domain = row["domain"] or ""
+        path_prefix = row["path_prefix"] or ""
+        if path_prefix and domain.endswith(path_prefix):
+            conn.execute(
+                "UPDATE instances SET domain=? WHERE id=?",
+                (domain[: -len(path_prefix)], row["id"]),
+            )
+
+
 def _migrate(conn: sqlite3.Connection):
     """Add new columns to existing tables without dropping data."""
     # system_settings table
@@ -71,6 +141,9 @@ def _migrate(conn: sqlite3.Connection):
     for col_name, col_def in new_columns:
         if not _column_exists(conn, "instances", col_name):
             conn.execute(f"ALTER TABLE instances ADD COLUMN {col_name} {col_def}")
+
+    _rebuild_instances_without_domain_unique(conn)
+    _normalize_path_domains(conn)
 
 
 def init_db():

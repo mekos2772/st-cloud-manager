@@ -118,10 +118,10 @@ def _generate_path_prefix(instance_id: str) -> str:
 
 def _access_url(domain: str, path_prefix: str = "") -> str:
     """Build the browser-facing URL for an instance."""
-    url = f"{PUBLIC_SCHEME}://{domain}"
-    if path_prefix and domain.endswith(path_prefix) and not url.endswith("/"):
-        return url + "/"
-    return url
+    if path_prefix:
+        host = domain[: -len(path_prefix)] if domain.endswith(path_prefix) else domain
+        return f"{PUBLIC_SCHEME}://{host}{path_prefix}/"
+    return f"{PUBLIC_SCHEME}://{domain}"
 
 
 def _resolve_routing_mode() -> str:
@@ -233,7 +233,7 @@ def create_instance(activation_key: str) -> dict:
             if not base_domain:
                 raise RuntimeError("路由模式为 path，但 base_domain 未配置")
             path_prefix = _generate_path_prefix(instance_id)
-            domain = f"{base_domain}{path_prefix}"
+            domain = base_domain
         elif settings.get("domain_mode") == "cloudflare":
             # Subdomain + Cloudflare DNS
             domain = _generate_domain(instance_id)
@@ -316,8 +316,7 @@ def create_instance(activation_key: str) -> dict:
         _start_container(container)
         steps_done.append("docker restart")
 
-        # wait for ST ready (path mode: domain already contains the full URL)
-        ready = _health_check_container(domain, timeout=60)
+        ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
         steps_done.append("wait ready")
 
         # test API and stream
@@ -461,7 +460,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
             if not base_domain:
                 raise RuntimeError("路由模式为 path，但 base_domain 未配置")
             path_prefix = _generate_path_prefix(instance_id)
-            domain = f"{base_domain}{path_prefix}"
+            domain = base_domain
         elif settings.get("domain_mode") == "cloudflare":
             domain = _generate_domain(instance_id)
             if is_cf_enabled():
@@ -516,7 +515,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
             render_config(instance_dir, vars_)
 
         _start_container(container)
-        ready = _health_check_container(domain, timeout=60)
+        ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
         url = _access_url(domain, path_prefix)
 
         now = datetime.now(timezone.utc).isoformat()
@@ -1024,7 +1023,7 @@ def check_instance(instance_id: str) -> dict:
     results = {}
     # Web check
     try:
-        ready = _health_check_container(inst["domain"], timeout=10)
+        ready = _health_check_container(inst["domain"], timeout=10, path_prefix=inst.get("path_prefix", ""))
         with get_db() as conn:
             conn.execute(
                 "UPDATE instances SET web_status=?, web_checked_at=? WHERE instance_id=?",
