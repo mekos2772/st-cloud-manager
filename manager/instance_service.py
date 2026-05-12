@@ -100,6 +100,46 @@ def _resolve_base_domain() -> str:
     return s.get("base_domain", BASE_DOMAIN) or BASE_DOMAIN
 
 
+def _resolve_route(instance_id: str, *, require_cf: bool = True) -> dict:
+    settings = get_all_settings()
+    routing_mode = _resolve_routing_mode()
+    cf_record_id = None
+    custom_domain = None
+    path_prefix = ""
+
+    if routing_mode == "path":
+        base_domain = _resolve_base_domain()
+        if not base_domain:
+            raise RuntimeError("路由模式为 path，但 base_domain 未配置")
+        path_prefix = _generate_path_prefix(instance_id)
+        domain = base_domain
+    elif settings.get("domain_mode") == "cloudflare":
+        domain = _generate_domain(instance_id)
+        if not is_cf_enabled():
+            if require_cf:
+                raise RuntimeError("域名模式为 cloudflare，但 CF Token / Zone ID 未配置")
+        else:
+            try:
+                cf_result = create_dns_record(instance_id)
+                cf_record_id = cf_result["record_id"]
+                custom_domain = cf_result["name"]
+                domain = custom_domain
+            except Exception as e:
+                if require_cf:
+                    raise RuntimeError(f"Cloudflare DNS 创建失败: {e}")
+    else:
+        domain = _generate_domain(instance_id)
+
+    return {
+        "routing_mode": routing_mode,
+        "domain": domain,
+        "base_domain": domain if routing_mode == "path" else "",
+        "path_prefix": path_prefix,
+        "cf_record_id": cf_record_id,
+        "custom_domain": custom_domain,
+    }
+
+
 def _generate_username() -> str:
     chars = string.ascii_lowercase + string.digits
     return "".join(secrets.choice(chars) for _ in range(USERNAME_LENGTH))
@@ -167,10 +207,81 @@ def _rollback(instance_id: str, container: str):
         shutil.move(str(user_dir), str(archive))
 
 
+def _render_initial_config(config_dir: Path, vars_: dict):
+    config_tpl = config_dir / "config.yaml"
+    if not config_tpl.exists():
+        return
+    content = config_tpl.read_text(encoding="utf-8")
+    for k, v in vars_.items():
+        content = content.replace("{{" + k + "}}", v)
+    config_tpl.write_text(content, encoding="utf-8")
+
+
+def _create_runtime_instance(
+    *,
+    container: str,
+    domain: str,
+    routing_mode: str,
+    path_prefix: str,
+    base_domain: str,
+    config_dir: Path,
+    data_dir: Path,
+    plugins_dir: Path,
+    is_trial: bool = False,
+):
+    ok = _create_container(
+        container_name=container,
+        domain=domain,
+        memory=DOCKER_MEMORY,
+        network=DOCKER_NETWORK,
+        image=DOCKER_IMAGE,
+        entrypoint=TRAEFIK_ENTRYPOINT,
+        cert_resolver=TRAEFIK_CERT_RESOLVER,
+        tls_enabled=TRAEFIK_TLS,
+        user_config_dir=str(config_dir),
+        user_data_dir=str(data_dir),
+        user_plugins_dir=str(plugins_dir),
+        routing_mode=routing_mode,
+        path_prefix=path_prefix,
+        base_domain=base_domain if routing_mode == "path" else "",
+        is_trial=is_trial,
+    )
+    if not ok:
+        raise RuntimeError("Failed to create Docker container")
+
+
+def _initialize_instance_runtime(
+    *,
+    instance_id: str,
+    container: str,
+    domain: str,
+    path_prefix: str,
+    instance_dir: Path,
+    vars_: dict,
+) -> tuple[bool, str | None]:
+    if not _wait_st_initialized(instance_id, timeout=60):
+        raise RuntimeError("ST initialization timed out")
+
+    _stop_container(container)
+
+    warning = None
+    api_template = TEMPLATES_DIR / "sillytavern" / "data" / "default-user"
+    if not api_template.exists():
+        warning = "未检测到 API 配置模板，请手动配置一次酒馆并复制 data/default-user 作为模板。"
+    else:
+        render_config(instance_dir, vars_)
+
+    _start_container(container)
+    ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
+    return ready, warning
+
+
 def create_instance(activation_key: str) -> dict:
     steps_done = []
     instance_id = None
     container = None
+    cf_record_id = None
+    proxy_key_alias = ""
 
     try:
         # validate key (don't mark used yet)
@@ -184,35 +295,14 @@ def create_instance(activation_key: str) -> dict:
         if not INSTANCE_ID_RE.match(instance_id):
             raise ValueError(f"Invalid instance_id format: {instance_id}")
 
-        settings = get_all_settings()
-        routing_mode = _resolve_routing_mode()
-        cf_record_id = None
-        custom_domain = None
+        route = _resolve_route(instance_id, require_cf=True)
+        routing_mode = route["routing_mode"]
+        domain = route["domain"]
+        base_domain = route["base_domain"]
+        path_prefix = route["path_prefix"]
+        cf_record_id = route["cf_record_id"]
+        custom_domain = route["custom_domain"]
         cf_warning = None
-        path_prefix = ""
-
-        if routing_mode == "path":
-            # Path-based routing — domain stores full access URL for uniqueness
-            base_domain = _resolve_base_domain()
-            if not base_domain:
-                raise RuntimeError("路由模式为 path，但 base_domain 未配置")
-            path_prefix = _generate_path_prefix(instance_id)
-            domain = base_domain
-        elif settings.get("domain_mode") == "cloudflare":
-            # Subdomain + Cloudflare DNS
-            domain = _generate_domain(instance_id)
-            if not is_cf_enabled():
-                raise RuntimeError("域名模式为 cloudflare，但 CF Token / Zone ID 未配置")
-            try:
-                cf_result = create_dns_record(instance_id)
-                cf_record_id = cf_result["record_id"]
-                custom_domain = cf_result["name"]
-                domain = custom_domain
-            except Exception as e:
-                raise RuntimeError(f"Cloudflare DNS 创建失败: {e}")
-        else:
-            # Subdomain + local
-            domain = _generate_domain(instance_id)
 
         username = _generate_username()
         password = _generate_password()
@@ -225,62 +315,35 @@ def create_instance(activation_key: str) -> dict:
         config_dir, data_dir, plugins_dir = copy_template(instance_id)
         steps_done.append("copy template")
 
-        # render config.yaml (first pass — just BasicAuth)
         instance_dir = USERS_DIR / instance_id
         vars_ = _api_template_vars(instance_id, username, password, api_key, path_prefix)
-        # Only render config.yaml now, API template later
-        config_tpl = config_dir / "config.yaml"
-        if config_tpl.exists():
-            content = config_tpl.read_text(encoding="utf-8")
-            for k, v in vars_.items():
-                content = content.replace("{{" + k + "}}", v)
-            config_tpl.write_text(content, encoding="utf-8")
+        _render_initial_config(config_dir, vars_)
         steps_done.append("render config")
 
-        # create container
-        ok = _create_container(
-            container_name=container,
+        _create_runtime_instance(
+            container=container,
             domain=domain,
-            memory=DOCKER_MEMORY,
-            network=DOCKER_NETWORK,
-            image=DOCKER_IMAGE,
-            entrypoint=TRAEFIK_ENTRYPOINT,
-            cert_resolver=TRAEFIK_CERT_RESOLVER,
-            tls_enabled=TRAEFIK_TLS,
-            user_config_dir=str(config_dir),
-            user_data_dir=str(data_dir),
-            user_plugins_dir=str(plugins_dir),
             routing_mode=routing_mode,
             path_prefix=path_prefix,
-            base_domain=base_domain if routing_mode == "path" else "",
+            base_domain=base_domain,
+            config_dir=config_dir,
+            data_dir=data_dir,
+            plugins_dir=plugins_dir,
         )
-        if not ok:
-            raise RuntimeError("Failed to create Docker container")
         steps_done.append("docker create")
 
-        # wait for ST to initialize data/default-user
-        if not _wait_st_initialized(instance_id, timeout=60):
-            raise RuntimeError("ST initialization timed out")
+        ready, warning = _initialize_instance_runtime(
+            instance_id=instance_id,
+            container=container,
+            domain=domain,
+            path_prefix=path_prefix,
+            instance_dir=instance_dir,
+            vars_=vars_,
+        )
         steps_done.append("wait init")
-
-        # stop container and apply full API config
-        _stop_container(container)
         steps_done.append("docker stop")
-
-        # apply API template (second pass — data/default-user)
-        api_template = TEMPLATES_DIR / "sillytavern" / "data" / "default-user"
-        warning = None
-        if not api_template.exists():
-            warning = "未检测到 API 配置模板，请手动配置一次酒馆并复制 data/default-user 作为模板。"
-        else:
-            render_config(instance_dir, vars_)
         steps_done.append("apply api config")
-
-        # restart container
-        _start_container(container)
         steps_done.append("docker restart")
-
-        ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
         steps_done.append("wait ready")
 
         # test API and stream
@@ -404,9 +467,10 @@ def create_trial_instance(client_ip: str) -> dict:
 
 def _create_trial_instance_inner(client_ip: str) -> dict:
     """Internal: create a trial instance."""
-    settings = get_all_settings()
     instance_id = None
     container = None
+    cf_record_id = None
+    proxy_key_alias = ""
     steps_done = []
 
     try:
@@ -414,29 +478,13 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         if not INSTANCE_ID_RE.match(instance_id):
             raise ValueError(f"Invalid instance_id: {instance_id}")
 
-        routing_mode = _resolve_routing_mode()
-        cf_record_id = None
-        custom_domain = None
-        path_prefix = ""
-
-        if routing_mode == "path":
-            base_domain = _resolve_base_domain()
-            if not base_domain:
-                raise RuntimeError("路由模式为 path，但 base_domain 未配置")
-            path_prefix = _generate_path_prefix(instance_id)
-            domain = base_domain
-        elif settings.get("domain_mode") == "cloudflare":
-            domain = _generate_domain(instance_id)
-            if is_cf_enabled():
-                try:
-                    cf_result = create_dns_record(instance_id)
-                    cf_record_id = cf_result["record_id"]
-                    custom_domain = cf_result["name"]
-                    domain = custom_domain
-                except Exception:
-                    pass
-        else:
-            domain = _generate_domain(instance_id)
+        route = _resolve_route(instance_id, require_cf=False)
+        routing_mode = route["routing_mode"]
+        domain = route["domain"]
+        base_domain = route["base_domain"]
+        path_prefix = route["path_prefix"]
+        cf_record_id = route["cf_record_id"]
+        custom_domain = route["custom_domain"]
 
         username = _generate_username()
         password = _generate_password()
@@ -447,39 +495,29 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         instance_dir = USERS_DIR / instance_id
         vars_ = _api_template_vars(instance_id, username, password, api_key, path_prefix)
 
-        config_tpl = config_dir / "config.yaml"
-        if config_tpl.exists():
-            content = config_tpl.read_text(encoding="utf-8")
-            for k, v in vars_.items():
-                content = content.replace("{{" + k + "}}", v)
-            config_tpl.write_text(content, encoding="utf-8")
+        _render_initial_config(config_dir, vars_)
 
-        ok = _create_container(
-            container_name=container, domain=domain, memory=DOCKER_MEMORY,
-            network=DOCKER_NETWORK, image=DOCKER_IMAGE,
-            entrypoint=TRAEFIK_ENTRYPOINT, cert_resolver=TRAEFIK_CERT_RESOLVER,
-            tls_enabled=TRAEFIK_TLS,
-            user_config_dir=str(config_dir), user_data_dir=str(data_dir),
-            user_plugins_dir=str(plugins_dir),
-            routing_mode=routing_mode, path_prefix=path_prefix,
-            base_domain=base_domain if routing_mode == "path" else "",
+        _create_runtime_instance(
+            container=container,
+            domain=domain,
+            routing_mode=routing_mode,
+            path_prefix=path_prefix,
+            base_domain=base_domain,
+            config_dir=config_dir,
+            data_dir=data_dir,
+            plugins_dir=plugins_dir,
             is_trial=True,
         )
-        if not ok:
-            raise RuntimeError("Failed to create Docker container")
         steps_done.append("docker create")
 
-        if not _wait_st_initialized(instance_id, timeout=60):
-            raise RuntimeError("ST initialization timed out")
-
-        _stop_container(container)
-
-        api_template = TEMPLATES_DIR / "sillytavern" / "data" / "default-user"
-        if api_template.exists():
-            render_config(instance_dir, vars_)
-
-        _start_container(container)
-        ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
+        ready, _ = _initialize_instance_runtime(
+            instance_id=instance_id,
+            container=container,
+            domain=domain,
+            path_prefix=path_prefix,
+            instance_dir=instance_dir,
+            vars_=vars_,
+        )
         url = build_access_url(domain, path_prefix)
 
         now = datetime.now(timezone.utc).isoformat()
