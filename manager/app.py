@@ -1,7 +1,7 @@
 """ST Cloud Manager - FastAPI backend v0.3."""
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,7 @@ from manager.settings_service import (
 )
 from manager.api_test_service import test_connection, test_stream
 from manager.api_proxy import proxy_chat_completions, proxy_models
+from manager.path_proxy import proxy_path_http, proxy_path_websocket
 from manager.docker_service import security_audit
 from manager.cloudflare_service import (
     get_cf_settings, update_cf_settings, test_token, list_zones, verify_zone,
@@ -495,6 +496,16 @@ async def v1_chat_completions(request: Request):
 @app.api_route("/v1/models", methods=["GET", "OPTIONS"])
 async def v1_models(request: Request):
     return await proxy_models(request)
+
+
+@app.api_route("/st-{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def st_path_fallback(request: Request):
+    return await proxy_path_http(request)
+
+
+@app.websocket("/st-{path:path}")
+async def st_path_fallback_ws(websocket: WebSocket):
+    await proxy_path_websocket(websocket)
 
 
 # ─── frontend pages ───
