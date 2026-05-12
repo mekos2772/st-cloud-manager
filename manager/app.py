@@ -39,6 +39,10 @@ from manager.cloudflare_service import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    try:
+        regenerate()
+    except Exception as e:
+        print(f"[startup] route regenerate failed: {e}")
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
     yield
