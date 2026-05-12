@@ -7,6 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 from manager.db import get_db
+from manager.instance_model import normalize_path_prefix, route_base_domain, with_access_url
 
 NGINX_CONF_DIR = Path(os.getenv("ST_NGINX_CONF_DIR", "/etc/nginx"))
 NGINX_SITES_DIR = NGINX_CONF_DIR / os.getenv("ST_NGINX_SITES_SUBDIR", "sites-enabled")
@@ -38,7 +39,6 @@ def _render_subdomain(inst: dict) -> str:
     ssl_key = os.getenv("ST_SSL_KEY", "/etc/ssl/private/st.key")
 
     lines = [f"# {cid}"]
-    schema = "https" if tls else "http"
     port = "443" if tls else "80"
     listen = f"listen {port} ssl;" if tls else f"listen {port};"
 
@@ -50,48 +50,6 @@ def _render_subdomain(inst: dict) -> str:
         lines.append(f"    ssl_certificate_key {ssl_key};")
     lines.append("")
     lines.append("    location / {")
-    lines.append("        proxy_pass http://127.0.0.1:$st_port;")
-    lines.append("        proxy_http_version 1.1;")
-    lines.append('        proxy_set_header Upgrade $http_upgrade;')
-    lines.append('        proxy_set_header Connection "upgrade";')
-    lines.append('        proxy_set_header Host $host;')
-    lines.append('        proxy_set_header X-Real-IP $remote_addr;')
-    lines.append('        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;')
-    lines.append('        proxy_set_header X-Forwarded-Proto $scheme;')
-    lines.append('        proxy_set_header Authorization $http_authorization;')
-    lines.append('        proxy_read_timeout 86400s;')
-    lines.append('        proxy_send_timeout 86400s;')
-    lines.append("    }")
-    lines.append("}")
-    return "\n".join(lines)
-
-
-def _render_path(inst: dict) -> str:
-    cid = inst["container_name"]
-    domain = inst["domain"]
-    path_prefix = inst.get("path_prefix", "")
-    base_domain = domain.replace(path_prefix, "") if path_prefix in domain else domain
-
-    tls = os.getenv("ST_TLS_ENABLED", "true").lower() in ("true", "1", "yes")
-    ssl_cert = os.getenv("ST_SSL_CERT", "/etc/ssl/certs/st.pem")
-    ssl_key = os.getenv("ST_SSL_KEY", "/etc/ssl/private/st.key")
-    port = "443" if tls else "80"
-    listen = f"listen {port} ssl;" if tls else f"listen {port};"
-
-    lines = [f"# {cid} (path: {path_prefix})"]
-    lines.append("server {")
-    lines.append(f"    server_name {base_domain};")
-    lines.append(f"    {listen}")
-    if tls:
-        lines.append(f"    ssl_certificate {ssl_cert};")
-        lines.append(f"    ssl_certificate_key {ssl_key};")
-    lines.append("")
-    lines.append(f"    # Redirect /st-xxx to /st-xxx/ so ST relative paths work")
-    lines.append(f"    location = {path_prefix} {{")
-    lines.append(f"        return 301 {path_prefix}/;")
-    lines.append("    }")
-    lines.append("")
-    lines.append(f"    location {path_prefix}/ {{")
     lines.append("        proxy_pass http://127.0.0.1:$st_port;")
     lines.append("        proxy_http_version 1.1;")
     lines.append('        proxy_set_header Upgrade $http_upgrade;')
@@ -127,7 +85,7 @@ def _render_path_group(base_domain: str, instances: list[dict], port_map: dict[s
     for inst in sorted(instances, key=lambda x: x.get("path_prefix", "")):
         cid = inst["container_name"]
         iid = cid.replace("st-", "")
-        path_prefix = inst.get("path_prefix", "")
+        path_prefix = normalize_path_prefix(inst.get("path_prefix", ""))
         actual_port = port_map.get(iid, 8000)
         if not path_prefix:
             continue
@@ -165,7 +123,7 @@ def regenerate() -> int:
         rows = conn.execute(
             "SELECT container_name, domain, path_prefix FROM instances WHERE status = 'running'"
         ).fetchall()
-    running = [dict(r) for r in rows]
+    running = [with_access_url(dict(r)) for r in rows]
 
     # Read port mapping files to build a set of ports
     users_dir = Path(os.getenv("ST_USERS_DIR", "users"))
@@ -183,16 +141,11 @@ def regenerate() -> int:
             except (ValueError, OSError):
                 pass
 
-    def base_domain_for(inst: dict) -> str:
-        path_prefix = inst.get("path_prefix", "")
-        domain = inst["domain"]
-        return domain.replace(path_prefix, "") if path_prefix and path_prefix in domain else domain
-
     path_groups = {}
     subdomain_instances = []
     for inst in running:
         if inst.get("path_prefix"):
-            path_groups.setdefault(base_domain_for(inst), []).append(inst)
+            path_groups.setdefault(route_base_domain(inst), []).append(inst)
         else:
             subdomain_instances.append(inst)
 

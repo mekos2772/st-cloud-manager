@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlunsplit
 
 import httpx
 from fastapi import HTTPException, Request, WebSocket
@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from manager.config import BASE_DIR
 from manager.db import get_db
+from manager.instance_model import normalize_path_prefix
 
 
 HOP_BY_HOP_HEADERS = {
@@ -39,7 +40,7 @@ def _running_path_instances() -> list[dict]:
 
 def _match_instance(path: str) -> dict | None:
     for inst in _running_path_instances():
-        prefix = inst["path_prefix"].rstrip("/")
+        prefix = normalize_path_prefix(inst.get("path_prefix", ""))
         if path == prefix or path.startswith(prefix + "/"):
             return inst
     return None

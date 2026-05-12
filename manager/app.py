@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from manager.config import ADMIN_API_KEY, BASE_DIR, DOCKER_NETWORK, DOCKER_IMAGE
 from manager.db import init_db, get_db
-from manager.instance_service import _regenerate as regenerate
+from manager.router_service import sync_routes_safely
 from manager.key_service import create_keys, list_keys, disable_key, enable_key, delete_key
 from manager.instance_service import (
     create_instance, stop_instance, start_instance, restart_instance,
@@ -40,10 +40,7 @@ from manager.cloudflare_service import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    try:
-        regenerate()
-    except Exception as e:
-        print(f"[startup] route regenerate failed: {e}")
+    sync_routes_safely("startup")
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
     yield
@@ -352,7 +349,7 @@ def admin_sync_domain(instance_id: str, x_api_key: str | None = Header(None)):
                 "UPDATE instances SET cf_record_id=?, custom_domain=?, domain=? WHERE instance_id=?",
                 (cf["record_id"], cf["name"], cf["name"], instance_id),
             )
-        regenerate()
+        sync_routes_safely("sync-domain")
         return {"ok": True, "cf_record_id": cf["record_id"], "domain": cf["name"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

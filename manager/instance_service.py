@@ -26,39 +26,11 @@ from manager.key_service import validate_key, mark_key_used
 from manager.proxy_service import create_proxy_key, delete_proxy_key
 from manager.settings_service import get_all_settings
 from manager.cloudflare_service import is_cf_enabled, create_dns_record, delete_dns_record
-
-RUNTIME_MODE = ROUTING_MODE  # reused, but runtime is separate
-
-
-def _get_docker_svc():
-    import manager.docker_service as svc
-    return svc
-
-
-def _get_process_svc():
-    import manager.process_service as svc
-    return svc
-
+from manager.instance_model import build_access_url, with_access_url
+from manager.router_service import get_runtime_service, sync_routes
 
 def _get_runtime_svc():
-    # Env var ST_RUNTIME_MODE > DB setting > default "docker"
-    from manager.config import RUNTIME_MODE as ENV_MODE
-    db_mode = get_all_settings().get("runtime_mode", ENV_MODE)
-    mode = ENV_MODE if ENV_MODE != "docker" else db_mode
-    if mode == "process":
-        return _get_process_svc()
-    return _get_docker_svc()
-
-
-def _get_regenerate_fn():
-    from manager.config import RUNTIME_MODE as ENV_MODE
-    db_mode = get_all_settings().get("runtime_mode", ENV_MODE)
-    mode = ENV_MODE if ENV_MODE != "docker" else db_mode
-    if mode == "process":
-        from manager.nginx_config_service import regenerate as regen
-        return regen
-    from manager.traefik_config_service import regenerate as regen
-    return regen
+    return get_runtime_service()
 
 
 def _create_container(**kwargs):
@@ -86,7 +58,7 @@ def _health_check_container(domain: str, timeout: int = 60, path_prefix: str = "
 
 
 def _regenerate():
-    return _get_regenerate_fn()()
+    return sync_routes()
 
 ID_LENGTH = 6
 USERNAME_LENGTH = 8
@@ -114,14 +86,6 @@ def _generate_path_prefix(instance_id: str) -> str:
     extra = "".join(secrets.choice(string.ascii_lowercase + string.digits)
                     for _ in range(PATH_PREFIX_LENGTH - len(instance_id)))
     return f"/st-{instance_id}{extra}"
-
-
-def _access_url(domain: str, path_prefix: str = "") -> str:
-    """Build the browser-facing URL for an instance."""
-    if path_prefix:
-        host = domain[: -len(path_prefix)] if domain.endswith(path_prefix) else domain
-        return f"{PUBLIC_SCHEME}://{host}{path_prefix}/"
-    return f"{PUBLIC_SCHEME}://{domain}"
 
 
 def _resolve_routing_mode() -> str:
@@ -325,7 +289,7 @@ def create_instance(activation_key: str) -> dict:
         stream_ok = True
         stream_error = None
 
-        url = _access_url(domain, path_prefix)
+        url = build_access_url(domain, path_prefix)
         steps_done.append("api test")
         steps_done.append("stream test")
 
@@ -516,7 +480,7 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
 
         _start_container(container)
         ready = _health_check_container(domain, timeout=60, path_prefix=path_prefix)
-        url = _access_url(domain, path_prefix)
+        url = build_access_url(domain, path_prefix)
 
         now = datetime.now(timezone.utc).isoformat()
         expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
@@ -904,7 +868,7 @@ def get_instance(instance_id: str) -> dict | None:
         row = conn.execute(
             "SELECT * FROM instances WHERE instance_id = ?", (instance_id,),
         ).fetchone()
-    return dict(row) if row else None
+    return with_access_url(dict(row)) if row else None
 
 
 def list_instances(status: str | None = None) -> list[dict]:
@@ -920,9 +884,7 @@ def list_instances(status: str | None = None) -> list[dict]:
             ).fetchall()
     result = []
     for r in rows:
-        inst = dict(r)
-        inst["url"] = _access_url(inst["domain"], inst.get("path_prefix", ""))
-        result.append(inst)
+        result.append(with_access_url(dict(r)))
     return result
 
 
@@ -1084,7 +1046,7 @@ def get_instance_inspect(instance_id: str) -> dict:
         "container_exists": container_exists_flag,
         "container_running": container_running,
         "domain": inst["domain"],
-        "url": _access_url(inst["domain"], inst.get("path_prefix", "")),
+        "url": build_access_url(inst["domain"], inst.get("path_prefix", "")),
         "user_dir_exists": user_dir.exists(),
         "config_yaml_exists": (user_dir / "config" / "config.yaml").exists(),
         "default_user_exists": (user_dir / "data" / "default-user").exists(),

@@ -7,6 +7,7 @@ infrequent create/stop/delete operations.
 import subprocess
 from manager.db import get_db
 from manager.config import TRAEFIK_DYNAMIC_CONFIG, TRAEFIK_ENTRYPOINT
+from manager.instance_model import route_base_domain, with_access_url
 
 TRAEFIK_CONTAINER = "st-traefik"
 
@@ -24,8 +25,7 @@ def _render_routers(running: list[dict]) -> str:
         lines.append(f"      entryPoints:\n")
         lines.append(f"        - {entry}\n")
         if path_prefix:
-            base = domain.replace(path_prefix, "") if path_prefix in domain else domain
-            lines.append(f'      rule: "Host(`{base}`) && PathPrefix(`{path_prefix}`)"\n')
+            lines.append(f'      rule: "Host(`{route_base_domain(inst)}`) && PathPrefix(`{path_prefix}`)"\n')
         else:
             lines.append(f'      rule: "Host(`{domain}`)"\n')
         lines.append(f"      service: {cid}\n")
@@ -60,7 +60,7 @@ def regenerate() -> int:
         rows = conn.execute(
             "SELECT container_name, domain, path_prefix FROM instances WHERE status = 'running'"
         ).fetchall()
-    running = [dict(r) for r in rows]
+    running = [with_access_url(dict(r)) for r in rows]
 
     yaml = (
         "http:\n"
