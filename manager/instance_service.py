@@ -28,6 +28,17 @@ from manager.settings_service import get_all_settings
 from manager.cloudflare_service import is_cf_enabled, create_dns_record, delete_dns_record
 from manager.instance_model import build_access_url, with_access_url
 from manager.router_service import get_runtime_service, sync_routes
+from manager.instance_repository import (
+    get_instance as repo_get_instance,
+    insert_instance,
+    insert_trial_instance,
+    list_instances as repo_list_instances,
+    mark_expired,
+    renew_instance_record,
+    update_api_key,
+    update_status,
+    update_web_check,
+)
 
 def _get_runtime_svc():
     return get_runtime_service()
@@ -359,16 +370,21 @@ def create_instance(activation_key: str) -> dict:
         # write to database
         now = datetime.now(timezone.utc).isoformat()
         expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
-        with get_db() as conn:
-            conn.execute(
-                """INSERT INTO instances
-                   (instance_id, domain, container_name, username, password, api_key,
-                    status, ready, api_status, stream_status, web_status,
-                    cf_record_id, custom_domain, path_prefix, proxy_key_alias, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, ?, ?, ?)""",
-                (instance_id, domain, container, username, password, api_key,
-                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, proxy_key_alias, now, expires),
-            )
+        insert_instance({
+            "instance_id": instance_id,
+            "domain": domain,
+            "container_name": container,
+            "username": username,
+            "password": password,
+            "api_key": api_key,
+            "ready": ready,
+            "cf_record_id": cf_record_id,
+            "custom_domain": custom_domain,
+            "path_prefix": path_prefix,
+            "proxy_key_alias": proxy_key_alias,
+            "created_at": now,
+            "expires_at": expires,
+        })
         steps_done.append("db insert")
 
         # mark key used
@@ -523,17 +539,23 @@ def _create_trial_instance_inner(client_ip: str) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
 
-        with get_db() as conn:
-            conn.execute(
-                """INSERT INTO instances
-                   (instance_id, domain, container_name, username, password, api_key,
-                    status, ready, api_status, stream_status, web_status,
-                    cf_record_id, custom_domain, path_prefix, is_trial, last_activity, client_ip,
-                    proxy_key_alias, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'running', ?, 'unchecked', 'unchecked', 'unchecked', ?, ?, ?, 1, ?, ?, ?, ?, ?)""",
-                (instance_id, domain, container, username, password, api_key,
-                 1 if ready else 0, cf_record_id, custom_domain, path_prefix, now, client_ip, proxy_key_alias, now, expires),
-            )
+        insert_trial_instance({
+            "instance_id": instance_id,
+            "domain": domain,
+            "container_name": container,
+            "username": username,
+            "password": password,
+            "api_key": api_key,
+            "ready": ready,
+            "cf_record_id": cf_record_id,
+            "custom_domain": custom_domain,
+            "path_prefix": path_prefix,
+            "last_activity": now,
+            "client_ip": client_ip,
+            "proxy_key_alias": proxy_key_alias,
+            "created_at": now,
+            "expires_at": expires,
+        })
 
         _regenerate()
 
@@ -760,12 +782,7 @@ def release_trial_instance(instance_id: str):
 
     archive_instance(instance_id, ARCHIVE_DIR)
 
-    now = datetime.now(timezone.utc).isoformat()
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status='released', ready=0 WHERE instance_id=?",
-            (instance_id,),
-        )
+    update_status(instance_id, "released", ready=0)
     _regenerate()
 
 
@@ -801,11 +818,7 @@ def get_trial_queue_status() -> dict:
 def stop_instance(instance_id: str):
     container = _container_name(instance_id)
     _stop_container(container)
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status = 'stopped' WHERE instance_id = ?",
-            (instance_id,),
-        )
+    update_status(instance_id, "stopped")
     _regenerate()
 
 
@@ -817,22 +830,14 @@ def start_instance(instance_id: str):
     if row["status"] == "expired":
         raise ValueError("Cannot start expired instance, renew it first")
     _start_container(container)
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status = 'running' WHERE instance_id = ?",
-            (instance_id,),
-        )
+    update_status(instance_id, "running")
     _regenerate()
 
 
 def restart_instance(instance_id: str):
     container = _container_name(instance_id)
     _restart_container(container)
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status = 'running', ready = 1 WHERE instance_id = ?",
-            (instance_id,),
-        )
+    update_status(instance_id, "running", ready=1)
     _regenerate()
     return {"ok": True}
 
@@ -850,11 +855,7 @@ def renew_instance(instance_id: str, days: int = DEFAULT_DAYS):
     if row["api_key"]:
         try:
             new_key, new_alias = create_proxy_key(instance_id)
-            with get_db() as conn:
-                conn.execute(
-                    "UPDATE instances SET api_key=?, proxy_key_alias=? WHERE instance_id=?",
-                    (new_key, new_alias, instance_id),
-                )
+            update_api_key(instance_id, new_key, new_alias)
             # Re-render templates with new key before starting
             instance_dir = USERS_DIR / instance_id
             vars_ = _api_template_vars(instance_id, row["username"], row["password"],
@@ -864,11 +865,7 @@ def renew_instance(instance_id: str, days: int = DEFAULT_DAYS):
             pass
 
     _start_container(_container_name(instance_id))
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status = 'running', expires_at = ? WHERE instance_id = ?",
-            (expires_str, instance_id),
-        )
+    renew_instance_record(instance_id, expires_str)
     _regenerate()
     return {"instance_id": instance_id, "expires_at": expires_str}
 
@@ -893,37 +890,16 @@ def delete_instance(instance_id: str):
         except Exception:
             pass
     archive_instance(instance_id, ARCHIVE_DIR)
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE instances SET status = 'deleted' WHERE instance_id = ?",
-            (instance_id,),
-        )
+    update_status(instance_id, "deleted")
     _regenerate()
 
 
 def get_instance(instance_id: str) -> dict | None:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM instances WHERE instance_id = ?", (instance_id,),
-        ).fetchone()
-    return with_access_url(dict(row)) if row else None
+    return repo_get_instance(instance_id)
 
 
 def list_instances(status: str | None = None) -> list[dict]:
-    with get_db() as conn:
-        if status:
-            rows = conn.execute(
-                "SELECT * FROM instances WHERE status = ? ORDER BY created_at DESC",
-                (status,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM instances ORDER BY created_at DESC"
-            ).fetchall()
-    result = []
-    for r in rows:
-        result.append(with_access_url(dict(r)))
-    return result
+    return repo_list_instances(status)
 
 
 def apply_api_config(instance_id: str) -> dict:
@@ -977,11 +953,7 @@ def check_expired():
                 delete_proxy_key(row.get("proxy_key_alias", ""))
             except Exception:
                 pass
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE instances SET status = 'expired' WHERE instance_id = ?",
-                (inst_id,),
-            )
+        mark_expired(inst_id)
     _regenerate()
     return len(expired)
 
@@ -1024,11 +996,11 @@ def check_instance(instance_id: str) -> dict:
     # Web check
     try:
         ready = _health_check_container(inst["domain"], timeout=10, path_prefix=inst.get("path_prefix", ""))
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE instances SET web_status=?, web_checked_at=? WHERE instance_id=?",
-                ("ready" if ready else "failed", datetime.now(timezone.utc).isoformat(), instance_id),
-            )
+        update_web_check(
+            instance_id,
+            "ready" if ready else "failed",
+            datetime.now(timezone.utc).isoformat(),
+        )
         results["web"] = "ready" if ready else "failed"
     except Exception as e:
         results["web"] = f"error: {e}"
