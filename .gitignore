@@ -19,6 +19,10 @@ dist/
 build/
 .DS_Store
 Thumbs.db
+.pytest_cache/
+artifacts/diagnostics/
+*.log
+tmp/
 traefik.exe
 traefik.zip
 traefik_linux.tar.gz
@@ -28,6 +32,4 @@ traefik.yml
 config.yaml
 st-release/
 nginx-sites/
-.env
-nginx-test.conf
 st-release2/

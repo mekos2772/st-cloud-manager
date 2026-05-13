@@ -86,60 +86,33 @@ def _clean_token_in_db():
 
 # ─── settings ───
 
-_CF_DEFAULTS = {
-    "cf_api_token": "",
-    "cf_zone_id": "",
-    "cf_zone_name": "",
-    "cf_base_domain": "",
-    "cf_record_type": "CNAME",
-    "cf_record_target": "",
-    "cf_proxied": "false",
-    "cf_ttl": "1",
-    "cf_sync_delete": "true",
-    "domain_mode": "local",  # "local" or "cloudflare"
-    # Runtime
-    "runtime_mode": "docker",  # "docker" or "process"
-    # Routing
-    "routing_mode": "subdomain",  # "subdomain" or "path"
-    "base_domain": "",
-    "path_prefix_length": "8",
-    # Trial mode
-    "trial_enabled": "false",
-    "trial_max_instances": "3",
-    "trial_idle_timeout": "600",
-    "trial_max_memory_pct": "85",
-    "trial_queue_enabled": "true",
+# Subset of settings keys to expose in the Cloudflare admin panel.
+# For canonical defaults see repositories/settings_repository._DEFAULTS.
+_CF_KEYS = {
+    "cf_api_token", "cf_zone_id", "cf_zone_name", "cf_base_domain",
+    "cf_record_type", "cf_record_target", "cf_proxied", "cf_ttl",
+    "cf_sync_delete", "domain_mode",
+    "runtime_mode", "routing_mode", "base_domain", "path_prefix_length",
+    "trial_enabled", "trial_max_instances", "trial_idle_timeout",
+    "trial_max_memory_pct", "trial_queue_enabled",
 }
 
 
 def get_cf_settings() -> dict:
     """Return Cloudflare and routing settings with token masked."""
-    from manager.settings_service import _DEFAULTS
+    from manager.settings_service import get_all_settings
+    all_settings = get_all_settings()
     result = {}
-    for k, v in _CF_DEFAULTS.items():
-        val = get_setting(k)
-        result[k] = val if val else v
+    for k in _CF_KEYS:
+        result[k] = all_settings.get(k, "")
     result["cf_api_token"] = _mask_key(result["cf_api_token"])
-    result["domain_mode"] = get_setting("domain_mode") or "local"
-    # Runtime settings
-    result["runtime_mode"] = get_setting("runtime_mode") or "docker"
-    # Routing settings
-    result["routing_mode"] = get_setting("routing_mode") or "subdomain"
-    result["base_domain"] = get_setting("base_domain") or ""
-    result["path_prefix_length"] = get_setting("path_prefix_length") or "8"
-    # Trial settings
-    result["trial_enabled"] = get_setting("trial_enabled") or "false"
-    result["trial_max_instances"] = get_setting("trial_max_instances") or "3"
-    result["trial_idle_timeout"] = get_setting("trial_idle_timeout") or "600"
-    result["trial_max_memory_pct"] = get_setting("trial_max_memory_pct") or "85"
-    result["trial_queue_enabled"] = get_setting("trial_queue_enabled") or "true"
     return result
 
 
 def update_cf_settings(data: dict) -> dict:
-    _clean_token_in_db()  # clean any old bad data first
+    _clean_token_in_db()
     updates = {}
-    for k in _CF_DEFAULTS:
+    for k in _CF_KEYS:
         if k in data:
             if k == "cf_api_token":
                 val = str(data[k]).strip()

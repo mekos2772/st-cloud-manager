@@ -25,10 +25,21 @@ def _path_site_path(base_domain: str) -> Path:
 
 
 def _reload_nginx():
+    # Nginx needs its prefix directory to resolve relative paths like logs/error.log.
+    # On Windows (winget install), nginx's own prefix may differ from the CWD.
+    nginx_args = [NGINX_BIN, "-s", "reload"]
+    env = os.environ.copy()
+    if NGINX_CONF_DIR.exists():
+        nginx_args = [NGINX_BIN, "-p", str(NGINX_CONF_DIR), "-s", "reload"]
     try:
-        subprocess.run([NGINX_BIN, "-s", "reload"], capture_output=True, timeout=10)
-    except Exception:
-        pass
+        result = subprocess.run(nginx_args, capture_output=True, text=True, timeout=10,
+                                cwd=str(NGINX_CONF_DIR) if NGINX_CONF_DIR.exists() else None)
+        if result.returncode != 0:
+            print(f"[nginx] reload failed (rc={result.returncode}): {result.stderr[:200]}")
+    except FileNotFoundError:
+        print(f"[nginx] binary not found: {NGINX_BIN}")
+    except Exception as e:
+        print(f"[nginx] reload error: {e}")
 
 
 def _render_subdomain(inst: dict) -> str:

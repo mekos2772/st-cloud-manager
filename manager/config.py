@@ -71,3 +71,10 @@ TRIAL_MAX_INSTANCES = int(os.getenv("ST_TRIAL_MAX_INSTANCES", "3"))
 TRIAL_IDLE_TIMEOUT = int(os.getenv("ST_TRIAL_IDLE_TIMEOUT", "600"))
 TRIAL_MAX_MEMORY_PCT = int(os.getenv("ST_TRIAL_MAX_MEMORY_PCT", "85"))
 TRIAL_QUEUE_ENABLED = os.getenv("ST_TRIAL_QUEUE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# Manager fallback proxy for /st-* path routing.
+# When true (default), the manager itself catches /st-* requests and proxies
+# to the instance's local port.  Useful as a safety net when nginx/traefik
+# is not reachable.  For production behind a reliable reverse proxy, set to
+# false to keep only nginx/traefik as the single entry point.
+ENABLE_MANAGER_PATH_FALLBACK = os.getenv("ST_ENABLE_MANAGER_PATH_FALLBACK", "true").lower() in ("true", "1", "yes")

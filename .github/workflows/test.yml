@@ -1,0 +1,57 @@
+name: Smoke Tests
+
+on:
+  push:
+    paths:
+      - 'manager/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'manager/**'
+      - 'tests/**'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install fastapi uvicorn httpx pytest
+          pip list | grep -E 'fastapi|httpx|pytest|starlette'
+
+      - name: Create .env for test
+        run: |
+          cat > .env << 'EOF'
+          ST_ADMIN_API_KEY=test-admin
+          ST_RUNTIME_MODE=process
+          ST_MASTER_API_KEY=test-master-key
+          ST_DOMAIN_SUFFIX=127-0-0-1.sslip.io
+          ST_BASE_DOMAIN=localhost
+          ST_USERS_DIR=users
+          ST_ARCHIVE_DIR=archive
+          ST_TEMPLATES_DIR=templates
+          ST_DB_PATH=data.db
+          EOF
+
+      - name: Create minimal template dir
+        run: |
+          mkdir -p templates/sillytavern/config
+          mkdir -p templates/sillytavern/data/default-user
+          echo 'dataRoot: ./data' > templates/sillytavern/config/config.yaml.tpl
+          touch templates/sillytavern/data/default-user/.gitkeep
+          mkdir -p static
+          echo '<html/>' > static/activate.html
+          echo '<html/>' > static/admin.html
+
+      - name: Run smoke tests
+        run: python -m pytest tests/test_smoke.py -v --tb=short --timeout=120

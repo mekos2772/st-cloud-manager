@@ -13,8 +13,8 @@ def create_proxy_key(instance_id: str) -> tuple[str, str]:
     if PROXY_MASTER_KEY:
         try:
             return _create_via_api(key_alias), key_alias
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[proxy] external API key creation failed, falling back to local key: {e}")
 
     return f"sk-st-{instance_id}-{suffix}", key_alias
 
@@ -24,13 +24,13 @@ def delete_proxy_key(key_alias: str):
     if PROXY_MASTER_KEY and key_alias:
         try:
             _delete_via_api(key_alias)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[proxy] external API key deletion failed for {key_alias}: {e}")
 
 
 def _create_via_api(key_alias: str) -> str:
     req = urllib.request.Request(
-        f"{PROXY_BASE_URL.rstrip('/v1')}/key/generate",
+        f"{PROXY_BASE_URL.removesuffix('/v1')}/key/generate",
         data=json.dumps({"key_alias": key_alias}).encode(),
         headers={
             "Authorization": f"Bearer {PROXY_MASTER_KEY}",
@@ -45,7 +45,7 @@ def _create_via_api(key_alias: str) -> str:
 
 def _delete_via_api(key_alias: str):
     req = urllib.request.Request(
-        f"{PROXY_BASE_URL.rstrip('/v1')}/key/delete",
+        f"{PROXY_BASE_URL.removesuffix('/v1')}/key/delete",
         data=json.dumps({"key_alias": key_alias}).encode(),
         headers={
             "Authorization": f"Bearer {PROXY_MASTER_KEY}",

@@ -1,0 +1,62 @@
+name: HTTP E2E (mock ST)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'manager/**'
+      - 'tests/**'
+      - 'scripts/validate_http_e2e.py'
+      - '.github/workflows/http-e2e.yml'
+
+jobs:
+  mock-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install fastapi uvicorn httpx pytest
+
+      - name: Setup env
+        run: |
+          cat > .env << 'EOF'
+          ST_ADMIN_API_KEY=ci-test-key
+          ST_RUNTIME_MODE=process
+          ST_MASTER_API_KEY=ci-master
+          ST_DOMAIN_SUFFIX=127-0-0-1.sslip.io
+          ST_BASE_DOMAIN=localhost
+          ST_PUBLIC_SCHEME=http
+          ST_TRIAL_ENABLED=true
+          ST_ENABLE_MANAGER_PATH_FALLBACK=true
+          ST_USERS_DIR=users
+          ST_ARCHIVE_DIR=archive
+          ST_TEMPLATES_DIR=templates
+          ST_DB_PATH=data.db
+          EOF
+          mkdir -p templates/sillytavern/config
+          mkdir -p templates/sillytavern/data/default-user
+          echo 'dataRoot: ./data' > templates/sillytavern/config/config.yaml.tpl
+          touch templates/sillytavern/data/default-user/.gitkeep
+          mkdir -p static users archive
+          echo '<html/>' > static/activate.html
+          echo '<html/>' > static/admin.html
+
+      - name: Runtime caps (no manager needed)
+        run: python -m pytest tests/test_e2e_runtime_caps.py -v --tb=short
+
+      - name: Mock ST HTTP E2E
+        run: python scripts/validate_http_e2e.py --mock-st --timeout 30
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: http-e2e-diagnostics
+          path: artifacts/

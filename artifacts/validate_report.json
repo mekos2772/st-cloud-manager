@@ -1,0 +1,83 @@
+{
+  "project": "st-cloud-manager",
+  "timestamp": "2026-05-12T16:31:57.319403+00:00",
+  "mode": "default",
+  "verdict": "WARN",
+  "verdict_reason": "HTTP E2E skipped — manager not running",
+  "manager_running": false,
+  "skipped_critical_tests": true,
+  "total": 14,
+  "failed": 0,
+  "suites": {
+    "compile": {
+      "tag": "python -m compileall -q manager",
+      "code": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "smoke": {
+      "tag": "python -m pytest tests/test_smoke.py -v --tb=short",
+      "code": 0,
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0
+    },
+    "e2e_caps": {
+      "tag": "python -m pytest tests/test_e2e_runtime_caps.py -v --tb=short",
+      "code": 0,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    },
+    "http_e2e": {
+      "tag": "python -m pytest tests/test_e2e_path_mode.py -v --tb=short",
+      "code": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 8
+    }
+  },
+  "imports": [
+    {
+      "tag": "import manager.app",
+      "code": 0
+    },
+    {
+      "tag": "import manager.runtimes.base",
+      "code": 0
+    },
+    {
+      "tag": "import manager.runtimes.docker_runtime",
+      "code": 0
+    },
+    {
+      "tag": "import manager.runtimes.process_runtime",
+      "code": 0
+    },
+    {
+      "tag": "import manager.services.instance_orchestrator",
+      "code": 0
+    },
+    {
+      "tag": "import manager.services.trial_service",
+      "code": 0
+    },
+    {
+      "tag": "import manager.router_service",
+      "code": 0
+    },
+    {
+      "tag": "import manager.routes.public",
+      "code": 0
+    },
+    {
+      "tag": "import manager.routes.admin",
+      "code": 0
+    },
+    {
+      "tag": "import manager.routes.proxy",
+      "code": 0
+    }
+  ]
+}

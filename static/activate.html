@@ -206,14 +206,16 @@ async function doTrialCreate(){
     clearInterval(anim);
     const data=await resp.json();
 
+    // Queued response is 200 OK — check before resp.ok
+    if(data.queued){
+      document.getElementById('queueInfo').style.display='block';
+      document.getElementById('queueInfo').innerHTML='⏳ '+data.message+'<br><small>系统资源紧张，请耐心等待，队列会自动处理。</small>';
+      prog.style.display='none'; btn.disabled=false; btn.textContent='一 键 创 建';
+      pollQueue();
+      return;
+    }
+
     if(!resp.ok){
-      if(data.queued){
-        document.getElementById('queueInfo').style.display='block';
-        document.getElementById('queueInfo').innerHTML='⏳ '+data.message+'<br><small>系统资源紧张，请耐心等待，队列会自动处理。</small>';
-        prog.style.display='none'; btn.disabled=false; btn.textContent='一 键 创 建';
-        pollQueue();
-        return;
-      }
       prog.style.display='none';
       errEl.textContent=data.detail||'创建失败'; errEl.style.display='block'; btn.disabled=false; btn.textContent='一 键 创 建';
       return;
@@ -230,7 +232,7 @@ async function doTrialCreate(){
     document.getElementById('resWarn').textContent='体验实例超过10分钟无操作将自动释放。';
     res.style.display='block'; prog.style.display='none';
     btn.disabled=false; btn.textContent='一 键 创 建';
-    startActivityPing(data.instance_id);
+    if(data.instance_id) startActivityPing(data.instance_id);
   } catch(e){
     clearInterval(anim);
     prog.style.display='none';

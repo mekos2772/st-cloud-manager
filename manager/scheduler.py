@@ -1,5 +1,8 @@
+"""Background scheduler — periodic maintenance tasks."""
 import time
-from manager.instance_service import check_expired, check_trial_idle, process_trial_queue, check_crashed
+
+from manager.services.instance_orchestrator import check_expired, check_crashed
+from manager.services.trial_service import check_trial_idle, process_trial_queue
 
 INTERVAL_SECONDS = 60
 QUEUE_INTERVAL_SECONDS = 30
@@ -10,22 +13,18 @@ def run_scheduler():
     last_queue_check = 0
     while True:
         try:
-            # Expired instance cleanup
             count = check_expired()
             if count > 0:
                 print(f"[scheduler] expired {count} instance(s)")
 
-            # Trial idle detection & release
             idle_count = check_trial_idle()
             if idle_count > 0:
                 print(f"[scheduler] released {idle_count} idle trial instance(s)")
 
-            # Crash detection & auto-restart
             restarted = check_crashed()
             if restarted > 0:
                 print(f"[scheduler] restarted {restarted} crashed instance(s)")
 
-            # Trial queue processing (check every QUEUE_INTERVAL_SECONDS)
             now = time.time()
             if now - last_queue_check >= QUEUE_INTERVAL_SECONDS:
                 processed = process_trial_queue()
